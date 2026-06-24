@@ -1,0 +1,6 @@
+-keep class com.google.mediapipe.** { *; }
+-dontwarn com.google.mediapipe.**
+-dontwarn com.google.protobuf.**
+-dontwarn javax.annotation.processing.**
+-dontwarn javax.lang.model.**
+-dontwarn com.google.auto.value.**

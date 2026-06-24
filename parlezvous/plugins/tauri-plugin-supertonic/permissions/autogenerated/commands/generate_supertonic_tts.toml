@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-generate-supertonic-tts"
+description = "Enables the generate_supertonic_tts command without any pre-configured scope."
+commands.allow = ["generate_supertonic_tts"]
+
+[[permission]]
+identifier = "deny-generate-supertonic-tts"
+description = "Denies the generate_supertonic_tts command without any pre-configured scope."
+commands.deny = ["generate_supertonic_tts"]

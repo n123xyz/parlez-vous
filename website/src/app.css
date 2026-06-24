@@ -1,0 +1,173 @@
+:root {
+  --bg: #09090b;
+  --bg-secondary: #18181b;
+  --text: #d4d4d8;
+  --text-muted: #a1a1aa;
+  --text-heading: #f4f4f5;
+  --accent: #fdfd96;
+  --accent-hover: #fcfca8;
+  --accent-glow: rgba(253, 253, 150, 0.35);
+  --border: rgba(63, 63, 70, 0.4);
+  --border-focus: rgba(253, 253, 150, 0.6);
+  --glass: rgba(24, 24, 27, 0.45);
+  --shadow-lg: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.5);
+
+  --font-sans: 'Outfit', 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  background-color: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  background-color: var(--bg);
+  color: var(--text);
+  overflow-x: hidden;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 99px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(113, 113, 122, 0.5);
+}
+
+/* Glassmorphism class utility */
+.glassmorphic {
+  background: var(--glass);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+}
+
+/* Global Markdown Styles */
+.markdown-body {
+  color: #d4d4d8;
+  line-height: 1.7;
+  font-size: 1.025rem;
+}
+
+.markdown-body h1 {
+  font-size: 2.25rem;
+  font-weight: 850;
+  color: #f4f4f5;
+  border-bottom: 1px solid rgba(63, 63, 70, 0.4);
+  padding-bottom: 0.75rem;
+  margin-top: 0;
+  margin-bottom: 1.75rem;
+  letter-spacing: -0.03em;
+}
+
+.markdown-body h2 {
+  font-size: 1.6rem;
+  font-weight: 750;
+  color: #f4f4f5;
+  margin-top: 2.25rem;
+  margin-bottom: 1.25rem;
+  border-bottom: 1px solid rgba(63, 63, 70, 0.2);
+  padding-bottom: 0.5rem;
+  letter-spacing: -0.02em;
+}
+
+.markdown-body h3 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--accent);
+  margin-top: 1.75rem;
+  margin-bottom: 0.75rem;
+  letter-spacing: -0.01em;
+}
+
+.markdown-body p {
+  margin-top: 0;
+  margin-bottom: 1.25rem;
+}
+
+.markdown-body strong {
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.markdown-body code {
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  background: rgba(39, 39, 42, 0.6);
+  padding: 0.2rem 0.4rem;
+  border-radius: 6px;
+  color: var(--accent);
+  border: 1px solid rgba(63, 63, 70, 0.4);
+}
+
+.markdown-body pre {
+  background: #18181b;
+  border: 1px solid rgba(63, 63, 70, 0.6);
+  padding: 1.25rem;
+  border-radius: 12px;
+  overflow-x: auto;
+  margin-bottom: 1.5rem;
+}
+
+.markdown-body pre code {
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: #e4e4e7;
+  font-size: 0.9rem;
+}
+
+.markdown-body ul, .markdown-body ol {
+  margin-top: 0;
+  margin-bottom: 1.5rem;
+  padding-left: 1.5rem;
+}
+
+.markdown-body li {
+  margin-bottom: 0.5rem;
+}
+
+.markdown-body a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  transition: color 0.15s ease;
+}
+
+.markdown-body a:hover {
+  color: var(--accent-hover);
+  text-decoration-color: var(--accent);
+}
+
+.markdown-body blockquote {
+  margin: 1.5rem 0;
+  padding: 1rem 1.5rem;
+  background: rgba(253, 253, 150, 0.04);
+  border-left: 4px solid var(--accent);
+  border-radius: 0 12px 12px 0;
+  color: #a1a1aa;
+}
+
+.markdown-body blockquote p {
+  margin: 0;
+}

@@ -1,0 +1,16 @@
+[
+    {
+        "id": "chaos_1",
+        "image": "chaos_1.jpg",
+        "title": "The Umbrella Dog",
+        "description": "Describe this chaotic scene in your target language.",
+        "ground_truth_concepts": ["dog", "umbrella", "flying", "sky"]
+    },
+    {
+        "id": "chaos_2",
+        "image": "chaos_2.jpg",
+        "title": "Coffee Swimming Pool",
+        "description": "What is happening here?",
+        "ground_truth_concepts": ["coffee", "swimming", "cup", "giant"]
+    }
+]

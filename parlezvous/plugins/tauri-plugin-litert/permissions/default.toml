@@ -1,0 +1,3 @@
+[default]
+description = "Default permissions for the plugin"
+permissions = ["allow-ping", "allow-init-model", "allow-check-model-exists", "allow-download-model", "allow-purge-model", "allow-generate-chat", "allow-close-model", "allow-pick-gallery-image"]

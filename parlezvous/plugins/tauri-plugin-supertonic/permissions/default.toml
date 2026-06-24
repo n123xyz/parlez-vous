@@ -1,0 +1,9 @@
+[default]
+description = "Default permissions for the plugin"
+permissions = [
+    "allow-ping",
+    "allow-is-supertonic-ready",
+    "allow-download-supertonic-models",
+    "allow-generate-supertonic-tts",
+    "allow-purge-supertonic-models"
+]

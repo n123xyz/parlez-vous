@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  whisper-api:
+    # Build the image from the Dockerfile in the current directory
+    build: .
+    ports:
+      # Map host port 8000 to container port 8000
+      - "8000:8000"
+    
+    # --- GPU Acceleration (Highly Recommended) ---
+    # Uncomment the 'deploy' section below if you have an NVIDIA GPU
+    # and have the NVIDIA Container Toolkit installed on your host machine.
+    # This will be dramatically faster than running on CPU.
+    
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

@@ -1,0 +1,250 @@
+{
+  "en": {
+    "language": "English",
+    "verbs": {
+      "speak": { "present": "speak", "past": "spoke" },
+      "eat": { "present": "eat", "past": "ate" },
+      "learn": { "present": "learn", "past": "learned" }
+    }
+  },
+  "ko": {
+    "language": "Korean",
+    "verbs": {
+      "speak": { "present": "말한다", "past": "말했다" },
+      "eat": { "present": "먹는다", "past": "먹었다" },
+      "learn": { "present": "배운다", "past": "배웠다" }
+    }
+  },
+  "ja": {
+    "language": "Japanese",
+    "verbs": {
+      "speak": { "present": "話す", "past": "話した" },
+      "eat": { "present": "食べる", "past": "食べた" },
+      "learn": { "present": "学ぶ", "past": "学んだ" }
+    }
+  },
+  "ar": {
+    "language": "Arabic",
+    "verbs": {
+      "speak": { "present": "أتحدث", "past": "تحدثت" },
+      "eat": { "present": "آكل", "past": "أكلt" },
+      "learn": { "present": "أتعلم", "past": "تعلمت" }
+    }
+  },
+  "bg": {
+    "language": "Bulgarian",
+    "verbs": {
+      "speak": { "present": "говоря", "past": "говорих" },
+      "eat": { "present": "ям", "past": "ядох" },
+      "learn": { "present": "уча", "past": "учих" }
+    }
+  },
+  "cs": {
+    "language": "Czech",
+    "verbs": {
+      "speak": { "present": "mluvím", "past": "mluvil jsem" },
+      "eat": { "present": "jím", "past": "jedl jsem" },
+      "learn": { "present": "učím se", "past": "učil jsem se" }
+    }
+  },
+  "da": {
+    "language": "Danish",
+    "verbs": {
+      "speak": { "present": "taler", "past": "talte" },
+      "eat": { "present": "spiser", "past": "spiste" },
+      "learn": { "present": "lærer", "past": "lærte" }
+    }
+  },
+  "de": {
+    "language": "German",
+    "verbs": {
+      "speak": { "present": "spreche", "past": "sprach" },
+      "eat": { "present": "esse", "past": "aß" },
+      "learn": { "present": "lerne", "past": "lernte" }
+    }
+  },
+  "el": {
+    "language": "Greek",
+    "verbs": {
+      "speak": { "present": "μιλάω", "past": "μίλησα" },
+      "eat": { "present": "τρώω", "past": "έφαγα" },
+      "learn": { "present": "μαθαίνω", "past": "έμαθα" }
+    }
+  },
+  "es": {
+    "language": "Spanish",
+    "verbs": {
+      "speak": { "present": "hablo", "past": "hablé" },
+      "eat": { "present": "como", "past": "comí" },
+      "learn": { "present": "aprendo", "past": "aprendí" }
+    }
+  },
+  "et": {
+    "language": "Estonian",
+    "verbs": {
+      "speak": { "present": "räägin", "past": "rääkisin" },
+      "eat": { "present": "söön", "past": "sõin" },
+      "learn": { "present": "õpin", "past": "õppisin" }
+    }
+  },
+  "fi": {
+    "language": "Finnish",
+    "verbs": {
+      "speak": { "present": "puhun", "past": "puhuin" },
+      "eat": { "present": "syön", "past": "söin" },
+      "learn": { "present": "opin", "past": "opin" }
+    }
+  },
+  "fr": {
+    "language": "French",
+    "verbs": {
+      "speak": { "present": "parle", "past": "ai parlé" },
+      "eat": { "present": "mange", "past": "ai mangé" },
+      "learn": { "present": "apprends", "past": "ai appris" }
+    }
+  },
+  "hi": {
+    "language": "Hindi",
+    "verbs": {
+      "speak": { "present": "बोलta हूँ", "past": "बोला" },
+      "eat": { "present": "खाता हूँ", "past": "खाया" },
+      "learn": { "present": "सीखता हूँ", "past": "सीखा" }
+    }
+  },
+  "hr": {
+    "language": "Croatian",
+    "verbs": {
+      "speak": { "present": "govorim", "past": "govorio sam" },
+      "eat": { "present": "jedem", "past": "jeo sam" },
+      "learn": { "present": "učim", "past": "učio sam" }
+    }
+  },
+  "hu": {
+    "language": "Hungarian",
+    "verbs": {
+      "speak": { "present": "beszélek", "past": "beszéltem" },
+      "eat": { "present": "eszem", "past": "ettem" },
+      "learn": { "present": "tanulok", "past": "tanultam" }
+    }
+  },
+  "id": {
+    "language": "Indonesian",
+    "verbs": {
+      "speak": { "present": "berbicara", "past": "sudah berbicara" },
+      "eat": { "present": "makan", "past": "sudah makan" },
+      "learn": { "present": "belajar", "past": "sudah belajar" }
+    }
+  },
+  "it": {
+    "language": "Italian",
+    "verbs": {
+      "speak": { "present": "parlo", "past": "ho parlato" },
+      "eat": { "present": "mangio", "past": "ho mangiato" },
+      "learn": { "present": "imparo", "past": "ho imparato" }
+    }
+  },
+  "lt": {
+    "language": "Lithuanian",
+    "verbs": {
+      "speak": { "present": "kalbu", "past": "kalbėjau" },
+      "eat": { "present": "valgau", "past": "valgiau" },
+      "learn": { "present": "mokausi", "past": "mokiausi" }
+    }
+  },
+  "lv": {
+    "language": "Latvian",
+    "verbs": {
+      "speak": { "present": "runāju", "past": "runāju" },
+      "eat": { "present": "ēdu", "past": "ēdu" },
+      "learn": { "present": "mācos", "past": "mācījos" }
+    }
+  },
+  "nl": {
+    "language": "Dutch",
+    "verbs": {
+      "speak": { "present": "spreek", "past": "sprak" },
+      "eat": { "present": "eet", "past": "at" },
+      "learn": { "present": "leer", "past": "leerde" }
+    }
+  },
+  "pl": {
+    "language": "Polish",
+    "verbs": {
+      "speak": { "present": "mówię", "past": "mówiłem" },
+      "eat": { "present": "jem", "past": "jadłem" },
+      "learn": { "present": "uczę się", "past": "uczyłem się" }
+    }
+  },
+  "pt": {
+    "language": "Portuguese",
+    "verbs": {
+      "speak": { "present": "falo", "past": "falei" },
+      "eat": { "present": "como", "past": "comi" },
+      "learn": { "present": "aprendo", "past": "aprendi" }
+    }
+  },
+  "ro": {
+    "language": "Romanian",
+    "verbs": {
+      "speak": { "present": "vorbesc", "past": "am vorbit" },
+      "eat": { "present": "mănânc", "past": "am mâncat" },
+      "learn": { "present": "învăț", "past": "am învățat" }
+    }
+  },
+  "ru": {
+    "language": "Russian",
+    "verbs": {
+      "speak": { "present": "говорю", "past": "говорил" },
+      "eat": { "present": "ем", "past": "ел" },
+      "learn": { "present": "учу", "past": "учил" }
+    }
+  },
+  "sk": {
+    "language": "Slovak",
+    "verbs": {
+      "speak": { "present": "hovorím", "past": "hovoril som" },
+      "eat": { "present": "jem", "past": "jedol som" },
+      "learn": { "present": "učím sa", "past": "učil som sa" }
+    }
+  },
+  "sl": {
+    "language": "Slovenian",
+    "verbs": {
+      "speak": { "present": "govorim", "past": "govoril sem" },
+      "eat": { "present": "jem", "past": "jedel sem" },
+      "learn": { "present": "učim se", "past": "učil som se" }
+    }
+  },
+  "sv": {
+    "language": "Swedish",
+    "verbs": {
+      "speak": { "present": "talar", "past": "talade" },
+      "eat": { "present": "äter", "past": "åt" },
+      "learn": { "present": "lär", "past": "lärde" }
+    }
+  },
+  "tr": {
+    "language": "Turkish",
+    "verbs": {
+      "speak": { "present": "konuşurum", "past": "konuştum" },
+      "eat": { "present": "yerim", "past": "yedim" },
+      "learn": { "present": "öğrenirim", "past": "öğrendim" }
+    }
+  },
+  "uk": {
+    "language": "Ukrainian",
+    "verbs": {
+      "speak": { "present": "говорю", "past": "говорив" },
+      "eat": { "present": "їм", "past": "їв" },
+      "learn": { "present": "вчу", "past": "вчив" }
+    }
+  },
+  "vi": {
+    "language": "Vietnamese",
+    "verbs": {
+      "speak": { "present": "nói", "past": "đã nói" },
+      "eat": { "present": "ăn", "past": "đã ăn" },
+      "learn": { "present": "học", "past": "đã học" }
+    }
+  }
+}

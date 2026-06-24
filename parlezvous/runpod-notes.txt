@@ -1,0 +1,71 @@
+   6  ollama pull gemma4:e4b 
+    7  ollama server & 
+    8  ollama serve & 
+    9  export OLLAMA_HOST=0.0.0.0
+   10  ollama serve & 
+   11  ollama list 
+   12  ps
+   13  pkill ollama
+   14  export OLLAMA_HOST=0.0.0.0
+   15  ollama serve & 
+   16  pkill ollama 
+   17  export OLLAMA_ORIGINS="*"
+   18  ollama serve & 
+   19  nvidia-smi 
+   20  ollama pull gemma4:26b
+   21  history 
+
+
+    1  ls
+    2  export OLLAMA_HOST=0.0.0.0
+    3  ollama serve &
+    4  ollama
+    5  cd /workspace/
+    6  ls
+    7  cd parlezvous/
+    8  cd whisper/
+    9  uv run app.py
+   10  curl -LsSf https://astral.sh/uv/install.sh | sh
+   11  curl -fsSL https://ollama.com/install.sh | sh
+   12  apt update 
+   13  apt install zstd
+   14  curl -fsSL https://ollama.com/install.sh | sh
+   15  uv run app.py
+   16  source ~/.bashrc
+   17  uv run app.py
+   18  uv clean
+   19  rm -rf .venv
+   20  export UV_LINK_MODE=symlink
+   21  uv sync
+   22  uv run app.py
+   23  ffmpeg
+   24  apt install ffmpeg
+   25  uv run app.py
+   26  history 
+    1  cd /workspace/parlezvous/
+    2  ls
+    3  cd Qwen3-TTS/
+    4  uv run qwen_tts/cli/openai_server.py --port 5050 --no-flash-attn --checkpoint Qwen3-TTS-12Hz-1.7B-CustomVoice/
+    5  uv
+    6  source ~/.bashrc 
+    7  uv run qwen_tts/cli/openai_server.py --port 5050 --no-flash-attn --checkpoint Qwen3-TTS-12Hz-1.7B-CustomVoice/
+    8  uv sync 
+    9  uv clean
+   10  uv clean --force 
+   11  uv sync 
+   12  uv clean --force 
+   13  uv sync 
+   14  rm -rf .venv
+   15  ls -a
+   16  uv clean
+   17  ls
+   18  ls -a
+   19  rm -rf .venv
+   20  export UV_LINK_MODE=symlink
+   21  uv sync
+   22  uv run qwen_tts/cli/openai_server.py --port 5050 --no-flash-attn --checkpoint Qwen3-TTS-12Hz-1.7B-CustomVoice/
+   23  history 
+
+
+Disk size 30, could be larger so we can use a larger model 
+Volume disk didn't need to be so large, look for a way to save ollama models to volume persistent disk. 

@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-purge-supertonic-models"
+description = "Enables the purge_supertonic_models command without any pre-configured scope."
+commands.allow = ["purge_supertonic_models"]
+
+[[permission]]
+identifier = "deny-purge-supertonic-models"
+description = "Denies the purge_supertonic_models command without any pre-configured scope."
+commands.deny = ["purge_supertonic_models"]

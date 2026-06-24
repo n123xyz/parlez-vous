@@ -1,0 +1,9 @@
+node_modules/
+target/
+.svelte-kit/
+*.db
+*.db-wal
+*.db-shm
+textbooks/
+parlezvous/src-tauri/gen/android/app/src/main/assets/models/character_model.onnx.data
+parlezvous/src-tauri/gen/android/app/src/main/assets/models/character_model.onnx

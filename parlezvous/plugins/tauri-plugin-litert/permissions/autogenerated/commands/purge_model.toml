@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-purge-model"
+description = "Enables the purge_model command without any pre-configured scope."
+commands.allow = ["purge_model"]
+
+[[permission]]
+identifier = "deny-purge-model"
+description = "Denies the purge_model command without any pre-configured scope."
+commands.deny = ["purge_model"]
