@@ -21,7 +21,7 @@ pub async fn get_journal_entries(
         let conn = db.lock().map_err(|_| "DB lock failed")?;
         
         let mut stmt = conn.prepare(
-            "SELECT id, language_code, date, mood_input, weather_input, activity_input, generated_target_text, native_translation FROM journal_entries ORDER BY date DESC, id DESC"
+            "SELECT id, language_code, DATE(date, 'localtime'), mood_input, weather_input, activity_input, generated_target_text, native_translation FROM journal_entries ORDER BY date DESC, id DESC"
         ).map_err(|e| e.to_string())?;
         
         let rows = stmt.query_map([], |row| {

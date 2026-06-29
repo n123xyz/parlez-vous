@@ -29,7 +29,7 @@ pub async fn process_journal_generation(
         let conn = db.lock().map_err(|_| "DB lock failed")?;
         
         conn.execute(
-            "INSERT INTO journal_entries (language_code, mood_input, weather_input, activity_input, generated_target_text, native_translation) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO journal_entries (language_code, date, mood_input, weather_input, activity_input, generated_target_text, native_translation) VALUES (?1, CURRENT_TIMESTAMP, ?2, ?3, ?4, ?5, ?6)",
             (&language, &mood, &weather, &activity, &response_clone.generated_target_text, &response_clone.native_translation)
         ).map_err(|e| e.to_string())?;
         
@@ -77,7 +77,7 @@ pub async fn process_journal_grading(
         let conn = db.lock().map_err(|_| "DB lock failed")?;
         
         conn.execute(
-            "INSERT INTO journal_entries (language_code, mood_input, weather_input, activity_input, generated_target_text, native_translation) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO journal_entries (language_code, date, mood_input, weather_input, activity_input, generated_target_text, native_translation) VALUES (?1, CURRENT_TIMESTAMP, ?2, ?3, ?4, ?5, ?6)",
             (&language, &"Custom".to_string(), &"Custom".to_string(), &"Custom".to_string(), &response_clone.generated_target_text, &response_clone.native_translation)
         ).map_err(|e| e.to_string())?;
         

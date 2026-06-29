@@ -264,7 +264,10 @@ impl LlmProvider for LiteRtAdapter {
         
         if compression_needed {
             println!("[LiteRT] Context maxed or loops predicted. Compressing history...");
-            let mut summary_prompt = "Summarize the following conversation briefly in 1-2 sentences. Focus on what was just talked about:\n\n".to_string();
+            let mut summary_prompt = format!(
+                "You are an internal system compressing memory for a language tutor avatar. Summarize the following conversation in 1-2 sentences in English. Focus strictly on the current topic of conversation and note any specific {} vocabulary the user was struggling with or practicing:\n\n",
+                language
+            );
             
             // Summarize everything except the very last user message
             let history_to_summarize = &history[0..history.len().saturating_sub(1)];

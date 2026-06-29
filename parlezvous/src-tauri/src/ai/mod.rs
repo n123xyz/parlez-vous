@@ -45,6 +45,8 @@ pub struct VocabItem {
 pub struct ChatMessage {
     pub role: String,
     pub content: String,
+    #[serde(default)]
+    pub audio_base64: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
