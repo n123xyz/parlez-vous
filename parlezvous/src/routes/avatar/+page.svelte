@@ -838,7 +838,15 @@
         }
 
         try {
-            const historyPayload = chatHistory.map(h => ({ role: h.role, content: h.content }));
+            let audioCount = 0;
+            const historyPayload = chatHistory.slice().reverse().map(h => {
+                let msg: any = { role: h.role, content: h.content };
+                if (h.audioBase64 && audioCount < 2) {
+                    msg.audio_base64 = h.audioBase64;
+                    audioCount++;
+                }
+                return msg;
+            }).reverse();
 
             const response = (await invoke('chat_with_avatar', {
                 history: historyPayload,

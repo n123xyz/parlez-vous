@@ -18,6 +18,7 @@ struct AppState {
     db: Arc<Mutex<Connection>>,
     ai: Arc<dyn LlmProvider + Send + Sync>,
     skill_level: std::sync::RwLock<String>,
+    conjugation_task: tokio::sync::Mutex<Option<tokio::task::AbortHandle>>,
 }
 
 #[tauri::command]
@@ -415,17 +416,43 @@ async fn generate_conjugation_exercise(
     model: String,
 ) -> Result<ConjugationResponse, String> {
     println!("[IPC] generate_conjugation_exercise called");
-    let (exercise, history_id) = crate::services::conjugator::process_conjugation_generation(
-        state.db.clone(),
-        state.ai.clone(),
-        language,
-        model,
-    )
-    .await?;
-    Ok(ConjugationResponse {
-        exercise,
-        history_id,
-    })
+
+    let db = state.db.clone();
+    let ai = state.ai.clone();
+    
+    let handle = tokio::spawn(async move {
+        crate::services::conjugator::process_conjugation_generation(
+            db,
+            ai,
+            language,
+            model,
+        )
+        .await
+    });
+
+    {
+        let mut task_guard = state.conjugation_task.lock().await;
+        if let Some(old_abort) = task_guard.replace(handle.abort_handle()) {
+            old_abort.abort();
+        }
+    }
+
+    match handle.await {
+        Ok(Ok((exercise, history_id))) => Ok(ConjugationResponse { exercise, history_id }),
+        Ok(Err(e)) => Err(e),
+        Err(e) if e.is_cancelled() => Err("Cancelled".to_string()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+#[tauri::command]
+async fn cancel_conjugation_generation(state: State<'_, AppState>) -> Result<(), String> {
+    println!("[IPC] cancel_conjugation_generation called");
+    let mut task_guard = state.conjugation_task.lock().await;
+    if let Some(abort_handle) = task_guard.take() {
+        abort_handle.abort();
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -587,6 +614,7 @@ pub fn run() {
                 db: db_arc,
                 ai: ai_adapter,
                 skill_level: std::sync::RwLock::new(initial_skill_level),
+                conjugation_task: tokio::sync::Mutex::new(None),
             });
 
             #[cfg(all(target_os = "linux", not(target_os = "android")))]
@@ -639,7 +667,8 @@ pub fn run() {
             check_tokenizer_exists,
             download_tokenizer,
             delete_tokenizer,
-            get_all_tense_stats
+            get_all_tense_stats,
+            cancel_conjugation_generation
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
