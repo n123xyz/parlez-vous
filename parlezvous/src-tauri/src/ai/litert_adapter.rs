@@ -265,7 +265,7 @@ impl LlmProvider for LiteRtAdapter {
         if compression_needed {
             println!("[LiteRT] Context maxed or loops predicted. Compressing history...");
             let mut summary_prompt = format!(
-                "You are an internal system compressing memory for a language tutor avatar. Summarize the following conversation in 1-2 sentences in English. Focus strictly on the current topic of conversation and note any specific {} vocabulary the user was struggling with or practicing:\n\n",
+                "You are an internal system compressing memory for a language tutor avatar. Provide a detailed, comprehensive summary of the following conversation in English. Focus on the core context, the topics discussed, the user's intent, and note any specific {} vocabulary or concepts the user was practicing. Ensure the summary contains enough detail so the AI can seamlessly resume the conversation without losing track of the subject:\n\n",
                 language
             );
             
@@ -290,7 +290,7 @@ impl LlmProvider for LiteRtAdapter {
             let mut new_history = Vec::new();
             if let Some(last_msg) = history.last() {
                 let mut modified_last_msg = last_msg.clone();
-                modified_last_msg.content = format!("[Previous Conversation Summary: {}]\n\n{}", summary_text, modified_last_msg.content);
+                modified_last_msg.content = format!("[System Note: The conversation was compressed due to length. Previous context: {} \nCRITICAL INSTRUCTION: Do NOT greet the user or introduce yourself again. Just naturally continue the conversation.]\n\n{}", summary_text, modified_last_msg.content);
                 new_history.push(modified_last_msg);
             }
             truncated_history = new_history;

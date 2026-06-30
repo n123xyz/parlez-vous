@@ -168,7 +168,8 @@ pub fn build_chat_system_prompt(
 
         prompt.push_str(
             "# CONVERSATION DYNAMICS\n\
-            - CRITICAL: Keep responses extremely concise (typically under 3 sentences). No long paragraphs unless explicitly asked.\n\n"
+            - CRITICAL: Keep responses extremely concise (typically under 3 sentences). No long paragraphs unless explicitly asked.\n\
+            - CRITICAL: Do NOT arbitrarily greet the user (e.g., saying 'Hello', 'Bonjour') mid-conversation. Just respond directly to their last message.\n\n"
         );
 
         prompt.push_str(
