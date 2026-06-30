@@ -296,6 +296,7 @@
     });
 
     onDestroy(() => {
+        invoke('cancel_conjugation_generation').catch(e => console.error("Failed to cancel generation: ", e));
         timeTracker.flushTime();
         timeTracker.stopTracking();
     });
