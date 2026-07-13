@@ -493,11 +493,16 @@ async fn get_all_tense_stats(
 async fn generate_supertonic_tts(
     app: tauri::AppHandle,
     state: tauri::State<'_, tauri_plugin_supertonic::commands::SupertonicState>,
+    app_state: tauri::State<'_, AppState>,
     text: String,
     lang: String,
     speed: f32,
     steps: u32,
 ) -> Result<tauri_plugin_supertonic::GenerateTtsResponse, String> {
+    let settings = services::settings::get_settings(app_state.db.clone())
+        .map_err(|e| e.to_string())?;
+    let voice_style = settings.supertonic_voice_style;
+
     tauri_plugin_supertonic::commands::generate_supertonic_tts(
         app,
         state,
@@ -506,6 +511,7 @@ async fn generate_supertonic_tts(
             lang,
             speed,
             steps,
+            voice_style,
         },
     )
     .await
@@ -568,6 +574,70 @@ async fn delete_tokenizer(app_handle: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+async fn generate_coding_puzzle(
+    state: State<'_, AppState>,
+    language: String,
+    model: String,
+    theme: String,
+    puzzle_type: String,
+) -> Result<String, String> {
+    state.ai.generate_coding_puzzle(language, model, theme, puzzle_type).await
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+pub struct CodingQueueItem {
+    pub question_type: String,
+    pub question_data: String,
+}
+
+#[tauri::command]
+async fn save_coding_queue(
+    state: State<'_, AppState>,
+    queue: Vec<CodingQueueItem>,
+) -> Result<(), String> {
+    let db = state.db.clone();
+    tokio::task::spawn_blocking(move || {
+        let mut conn = db.lock().map_err(|_| "DB lock failed")?;
+        let tx = conn.transaction().map_err(|e| e.to_string())?;
+        
+        tx.execute("DELETE FROM coding_questions_queue", []).map_err(|e| e.to_string())?;
+        
+        {
+            let mut stmt = tx.prepare("INSERT INTO coding_questions_queue (question_type, question_data) VALUES (?1, ?2)").map_err(|e| e.to_string())?;
+            for item in queue {
+                stmt.execute([&item.question_type, &item.question_data]).map_err(|e| e.to_string())?;
+            }
+        }
+        tx.commit().map_err(|e| e.to_string())?;
+        Ok(())
+    }).await.map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+async fn load_coding_queue(
+    state: State<'_, AppState>,
+) -> Result<Vec<CodingQueueItem>, String> {
+    let db = state.db.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(|_| "DB lock failed")?;
+        let mut stmt = conn.prepare("SELECT question_type, question_data FROM coding_questions_queue ORDER BY id ASC").map_err(|e| e.to_string())?;
+        
+        let iter = stmt.query_map([], |row| {
+            Ok(CodingQueueItem {
+                question_type: row.get(0)?,
+                question_data: row.get(1)?,
+            })
+        }).map_err(|e| e.to_string())?;
+        
+        let mut queue = Vec::new();
+        for item in iter {
+            queue.push(item.map_err(|e| e.to_string())?);
+        }
+        Ok(queue)
+    }).await.map_err(|e| format!("Task failed: {}", e))?
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -597,6 +667,10 @@ pub fn run() {
                         huggingface_token: None,
                         litert_accelerator: "Auto".to_string(),
                         litert_max_tokens: 5000,
+                        target_programming_language: "python".to_string(),
+                        coding_theme_category: "All".to_string(),
+                        active_vrm: "avatar.vrm".to_string(),
+                        supertonic_voice_style: "voice_styles/F1.json".to_string(),
                     });
                 match crate::ai::litert_adapter::LiteRtAdapter::new(app.handle().clone(), "gemma-4-E2B-it.litertlm".to_string(), settings.litert_accelerator, settings.litert_max_tokens) {
                     Ok(adapter) => Arc::new(adapter),
@@ -668,7 +742,10 @@ pub fn run() {
             download_tokenizer,
             delete_tokenizer,
             get_all_tense_stats,
-            cancel_conjugation_generation
+            cancel_conjugation_generation,
+            generate_coding_puzzle,
+            save_coding_queue,
+            load_coding_queue
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

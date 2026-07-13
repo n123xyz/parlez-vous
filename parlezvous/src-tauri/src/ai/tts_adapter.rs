@@ -68,14 +68,18 @@ impl<R: Runtime> SupertonicTtsAdapter<R> {
 #[async_trait]
 impl<R: Runtime> TtsProvider for SupertonicTtsAdapter<R> {
     async fn generate_tts(&self, text: &str, language: &str, _voice: &str, speed: f32) -> Result<Vec<u8>, String> {
-        // Voice is ignored, defaulting to F1.json as requested
-        
         let state = self.app_handle.state::<tauri_plugin_supertonic::commands::SupertonicState>();
+        let app_state = self.app_handle.state::<crate::AppState>();
+        
+        let settings = crate::services::settings::get_settings(app_state.db.clone())
+            .map_err(|e| format!("Failed to get settings: {}", e))?;
+            
         let payload = tauri_plugin_supertonic::GenerateTtsRequest {
             text: text.to_string(),
             lang: language.to_string(),
             speed,
             steps: 10,
+            voice_style: settings.supertonic_voice_style,
         };
 
         // We can call the command directly

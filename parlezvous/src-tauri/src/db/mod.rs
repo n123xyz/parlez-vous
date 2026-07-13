@@ -231,7 +231,27 @@ pub const SCHEMA_V1: &str = "
     PRAGMA user_version = 1;
 ";
 
-const DB_VERSION_NUM: usize = 1;
+pub const SCHEMA_V2: &str = "
+    ALTER TABLE settings ADD COLUMN target_programming_language TEXT NOT NULL DEFAULT 'python';
+
+    CREATE TABLE coding_questions_queue (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        question_type TEXT NOT NULL,
+        question_data TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    PRAGMA user_version = 2;
+";
+
+pub const SCHEMA_V3: &str = "
+    ALTER TABLE settings ADD COLUMN coding_theme_category TEXT NOT NULL DEFAULT 'All';
+    ALTER TABLE settings ADD COLUMN active_vrm TEXT NOT NULL DEFAULT 'avatar.vrm';
+    ALTER TABLE settings ADD COLUMN supertonic_voice_style TEXT NOT NULL DEFAULT 'voice_styles/F1.json';
+    PRAGMA user_version = 3;
+";
+
+const DB_VERSION_NUM: usize = 3;
 
 pub fn init_db(app_handle: &tauri::AppHandle) -> Result<Connection, String> {
     let app_dir = app_handle
@@ -261,16 +281,28 @@ pub fn init_db(app_handle: &tauri::AppHandle) -> Result<Connection, String> {
     let conn = Connection::open(&db_path)
         .map_err(|e| format!("Failed to open database at {:?}: {}", db_path, e))?;
 
-    let schemas = [SCHEMA_V1];
+    // Fix for databases where SCHEMA_V1 ran but PRAGMA user_version = 1 was ignored
+    let mut user_version: i32 = conn
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .map_err(|e| e.to_string())?;
+
+    if user_version == 0 {
+        let tables_count: i32 = conn
+            .query_row("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='settings'", [], |row| row.get(0))
+            .unwrap_or(0);
+        if tables_count > 0 {
+            conn.pragma_update(None, "user_version", 1).map_err(|e| e.to_string())?;
+            user_version = 1;
+        }
+    }
+
+    let schemas = [SCHEMA_V1, SCHEMA_V2, SCHEMA_V3];
 
     for i in 0..DB_VERSION_NUM {
-        // Migration: set user_version
-        let user_version: i32 = conn
-            .query_row("PRAGMA user_version", [], |row| row.get(0))
-            .map_err(|e| e.to_string())?;
-
         if user_version == i as i32 {
             conn.execute_batch(schemas[i]).map_err(|e| e.to_string())?;
+            conn.pragma_update(None, "user_version", (i + 1) as i32).map_err(|e| e.to_string())?;
+            user_version = (i + 1) as i32;
         }
     }
 

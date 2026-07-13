@@ -269,8 +269,9 @@ impl LlmProvider for LiteRtAdapter {
                 language
             );
             
-            // Summarize everything except the very last user message
-            let history_to_summarize = &history[0..history.len().saturating_sub(1)];
+            let keep_count = std::cmp::min(2, history.len());
+            // Summarize everything except the very last messages we keep
+            let history_to_summarize = &history[0..history.len().saturating_sub(keep_count)];
             for msg in history_to_summarize {
                 summary_prompt.push_str(&format!("{}: {}\n", msg.role, msg.content));
             }
@@ -286,12 +287,16 @@ impl LlmProvider for LiteRtAdapter {
             
             context_summary = Some(summary_text.clone());
             
-            // Replace the truncated history with just the summary injected into the last user message
+            // Replace the truncated history with just the summary injected as a system note
             let mut new_history = Vec::new();
-            if let Some(last_msg) = history.last() {
-                let mut modified_last_msg = last_msg.clone();
-                modified_last_msg.content = format!("[System Note: The conversation was compressed due to length. Previous context: {} \nCRITICAL INSTRUCTION: Do NOT greet the user or introduce yourself again. Just naturally continue the conversation.]\n\n{}", summary_text, modified_last_msg.content);
-                new_history.push(modified_last_msg);
+            new_history.push(ChatMessage {
+                role: "system".to_string(),
+                content: format!("[System Note: The conversation was compressed due to length. Previous context: {} \nCRITICAL INSTRUCTION: Do NOT greet the user or introduce yourself again. Just naturally continue the conversation.]", summary_text),
+                audio_base64: None,
+            });
+            
+            for msg in &history[history.len() - keep_count .. history.len()] {
+                new_history.push(msg.clone());
             }
             truncated_history = new_history;
             is_continuation = false; // Force a full reset with the new summarized context
@@ -337,7 +342,14 @@ impl LlmProvider for LiteRtAdapter {
             }
             
             if !is_continuation {
-                format!("{}\n\n{}", system_prompt_str, text)
+                let mut system_notes = String::new();
+                for msg in &truncated_history {
+                    if msg.role == "system" {
+                        system_notes.push_str(&msg.content);
+                        system_notes.push_str("\n\n");
+                    }
+                }
+                format!("{}\n\n{}{}", system_prompt_str, system_notes, text)
             } else {
                 text
             }
@@ -351,11 +363,24 @@ impl LlmProvider for LiteRtAdapter {
                 prompt.push_str(&format!("<start_of_turn>user\n{}<end_of_turn>\n", system_prompt_str));
             } else {
                 let mut first_user_found = false;
+                let mut buffered_system = String::new();
                 for msg in truncated_history {
-                    prompt.push_str(&format!("<start_of_turn>{}\n", msg.role));
-                    if !first_user_found && msg.role == "user" {
+                    let mut role = msg.role.as_str();
+                    if role == "assistant" { role = "model"; }
+                    if role == "system" {
+                        buffered_system.push_str(&msg.content);
+                        buffered_system.push_str("\n\n");
+                        continue;
+                    }
+                    
+                    prompt.push_str(&format!("<start_of_turn>{}\n", role));
+                    if !first_user_found && role == "user" {
                         prompt.push_str(&format!("{}\n\n", system_prompt_str));
                         first_user_found = true;
+                    }
+                    if role == "user" && !buffered_system.is_empty() {
+                        prompt.push_str(&buffered_system);
+                        buffered_system.clear();
                     }
                     prompt.push_str(&msg.content);
                     prompt.push_str("<end_of_turn>\n");
@@ -419,5 +444,59 @@ impl LlmProvider for LiteRtAdapter {
 
     async fn generate_embedding(&self, _text: String, _model: String) -> Result<Vec<f64>, String> {
         Err(self.unsupported("Embeddings"))
+    }
+
+    async fn generate_coding_puzzle(
+        &self,
+        language: String,
+        _model: String,
+        theme: String,
+        puzzle_type: String,
+    ) -> Result<String, String> {
+        self.ensure_initialized().await?;
+        let (system_prompt, user_prompt) = super::build_coding_puzzle_prompt(&language, &theme, &puzzle_type);
+        let prompt = format!("{}\n{}", system_prompt, user_prompt);
+        let max_attempts = 3;
+        let mut attempts = 0;
+        
+        while attempts < max_attempts {
+            let mut json_value: serde_json::Value = match self.execute_json_generation(prompt.clone(), "Coding Puzzle") {
+                Ok(v) => v,
+                Err(e) => {
+                    attempts += 1;
+                    if attempts >= max_attempts { return Err(e); }
+                    continue;
+                }
+            };
+            
+            if puzzle_type == "keystone" {
+                if let Some(code) = json_value.get("code_with_blank").and_then(|v| v.as_str()) {
+                    if !code.contains("___BLANK___") {
+                        let mut recovered = false;
+                        if let Some(exact) = json_value.get("exact_answer").and_then(|v| v.as_str()) {
+                            if !exact.trim().is_empty() && code.contains(exact) {
+                                let new_code = code.replacen(exact, "___BLANK___", 1);
+                                if let Some(obj) = json_value.as_object_mut() {
+                                    obj.insert("code_with_blank".to_string(), serde_json::Value::String(new_code));
+                                    recovered = true;
+                                    println!("[LiteRT] Recovered missing ___BLANK___ using exact_answer");
+                                }
+                            }
+                        }
+
+                        if !recovered {
+                            println!("[LiteRT] Rejection: Model failed to include ___BLANK___ in keystone puzzle. Retrying...");
+                            attempts += 1;
+                            if attempts >= max_attempts {
+                                return Err(format!("The AI model failed to include ___BLANK___ after {} attempts.", max_attempts));
+                            }
+                            continue;
+                        }
+                    }
+                }
+            }
+            return Ok(json_value.to_string());
+        }
+        Err("Failed to generate coding puzzle".to_string())
     }
 }

@@ -49,7 +49,7 @@ pub async fn generate_supertonic_tts<R: Runtime>(
         let mut tts_guard = tts_arc.lock().unwrap();
 
         let model_dir = app_data_dir.join("onnx");
-        let style_path = app_data_dir.join("voice_styles").join("F1.json");
+        let style_path = app_data_dir.join(&payload.voice_style);
 
         if tts_guard.is_none() {
             let _ = ort::init().with_name("supertonic-tts").commit();
