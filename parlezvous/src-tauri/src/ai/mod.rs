@@ -26,7 +26,7 @@ pub struct GradingVariables {
     pub skill_level: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, schemars::JsonSchema)]
 pub struct JournalResponse {
     pub generated_target_text: String,
     pub native_translation: String,
@@ -35,13 +35,13 @@ pub struct JournalResponse {
     pub feedback: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, schemars::JsonSchema)]
 pub struct VocabItem {
     pub target_text: String,
     pub native_text: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, schemars::JsonSchema)]
 pub struct ChatMessage {
     pub role: String,
     pub content: String,
@@ -49,7 +49,7 @@ pub struct ChatMessage {
     pub audio_base64: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, schemars::JsonSchema)]
 pub struct ChatResponse {
     pub response: String,
     pub idealized_correction: Option<String>,
@@ -57,7 +57,7 @@ pub struct ChatResponse {
     pub context_summary: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, schemars::JsonSchema)]
 pub struct ConjugationExercise {
     pub subject: String,
     pub tense: String,
@@ -68,11 +68,26 @@ pub struct ConjugationExercise {
 }
 
 /// Per-tense accuracy stats derived from the last N answered exercises.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug, Clone, schemars::JsonSchema)]
 pub struct TenseStat {
     pub tense: String,
     pub total: u32,
     pub correct: u32,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, schemars::JsonSchema)]
+pub struct KeystonePuzzle {
+    pub language: String,
+    pub code_with_blank: String,
+    pub exact_answer: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, schemars::JsonSchema)]
+pub struct SpeedrunPuzzle {
+    pub language: String,
+    pub code: String,
+    pub correct_answer: String,
+    pub distractors: Vec<String>,
 }
 
 #[async_trait]
@@ -107,6 +122,13 @@ pub trait LlmProvider {
         active_theme: String,
     ) -> Result<ConjugationExercise, String>;
     async fn generate_embedding(&self, text: String, model: String) -> Result<Vec<f64>, String>;
+    async fn generate_coding_puzzle(
+        &self,
+        language: String,
+        model: String,
+        theme: String,
+        puzzle_type: String,
+    ) -> Result<String, String>;
 }
 
 // -----------------------------------------------------------------------------
@@ -139,6 +161,44 @@ pub fn build_journal_prompt(
     prompt
 }
 
+pub fn build_coding_puzzle_prompt(language: &str, theme: &str, puzzle_type: &str) -> (String, String) {
+    let example_keystone_code = match language.to_lowercase().as_str() {
+        "rust" => "fn do_work(a: i32, b: i32) -> i32 {\\n    return ___BLANK___;\\n}",
+        "javascript" | "typescript" | "js" | "ts" => "function doWork(a, b) {\\n    return ___BLANK___;\\n}",
+        "go" => "func doWork(a int, b int) int {\\n    return ___BLANK___\\n}",
+        "c++" | "cpp" | "c" => "int do_work(int a, int b) {\\n    return ___BLANK___;\\n}",
+        "java" => "public int doWork(int a, int b) {\\n    return ___BLANK___;\\n}",
+        "kotlin" | "kt" => "fun doWork(a: Int, b: Int): Int {\\n    return ___BLANK___\\n}",
+        _ => "def do_work(a, b):\\n    return ___BLANK___", // Default to python-like
+    };
+
+    let example_speedrun_code = match language.to_lowercase().as_str() {
+        "rust" => "fn do_work(arr: &[i32]) -> i32 {\\n    return arr[arr.len() - 1];\\n}",
+        "javascript" | "typescript" | "js" | "ts" => "function doWork(arr) {\\n    return arr[arr.length - 1];\\n}",
+        "go" => "func doWork(arr []int) int {\\n    return arr[len(arr)-1]\\n}",
+        "c++" | "cpp" | "c" => "int do_work(std::vector<int>& arr) {\\n    return arr.back();\\n}",
+        "java" => "public int doWork(int[] arr) {\\n    return arr[arr.length - 1];\\n}",
+        "kotlin" | "kt" => "fun doWork(arr: IntArray): Int {\\n    return arr.last()\\n}",
+        _ => "def do_work(arr):\\n    return arr[-1]", // Default to python-like
+    };
+
+    if puzzle_type == "keystone" {
+        (
+            format!(
+                "You are a strict JSON code generator for a programming game.\nYou will be given a programming topic. Generate a concise, functional snippet of code (10-15 lines max) that solves it.\n\nCRITICAL GAMEPLAY RULES:\n1. You MUST replace the single most important line of algorithmic logic (the 'keystone' of the function) with the exact string \"___BLANK___\".\n2. The code MUST contain exactly one instance of \"___BLANK___\".\n3. Do not blank out function definitions, imports, or basic brackets. Only blank out the core logical step.\n4. CRITICAL: ALL generated code MUST be written strictly in the {language} programming language. Do NOT use any other language.\n\nCRITICAL JSON RULES:\n1. You MUST escape all internal double quotes inside your code strings (e.g., use \\\" instead of \").\n2. You MUST use \\n for newlines inside your code strings. Do NOT use actual line breaks.\n\nOutput strictly in this JSON format:\n{{\n  \"language\": \"{language}\",\n  \"code_with_blank\": \"{example_keystone_code}\",\n  \"exact_answer\": \"a + b\"\n}}"
+            ),
+            theme.to_string()
+        )
+    } else {
+        (
+            format!(
+                "You are a strict JSON code generator for a programming game.\nYou will be given a programming topic. Generate a concise, functional snippet of code (10-15 lines max) that solves it.\n\nCRITICAL GAMEPLAY RULES:\n1. You MUST name the main function generically, exactly `doWork` or `do_work`, so the name does NOT give away what the code does.\n2. Do NOT include any comments, docstrings, or documentation in the code. It must be completely uncommented.\n3. Provide a short, 1-sentence correct description of what the code does, and 3 plausible but incorrect distractor descriptions. The distractors should sound like real programming operations.\n4. CRITICAL: ALL generated code MUST be written strictly in the {language} programming language. Do NOT use any other language.\n\nCRITICAL JSON RULES:\n1. You MUST escape all internal double quotes inside your code strings (e.g., use \\\" instead of \").\n2. You MUST use \\n for newlines inside your code strings. Do NOT use actual line breaks.\n\nOutput strictly in this JSON format:\n{{\n  \"language\": \"{language}\",\n  \"code\": \"{example_speedrun_code}\",\n  \"correct_answer\": \"Returns the last element of an array.\",\n  \"distractors\": [\"Removes the first element of an array.\", \"Reverses the array in place.\", \"Returns the length of the array.\"]\n}}"
+            ),
+            theme.to_string()
+        )
+    }
+}
+
 pub fn build_chat_system_prompt(
     language: &str,
     skill_level: &str,
@@ -161,73 +221,48 @@ pub fn build_chat_system_prompt(
         ));
     } else {
         prompt.push_str(&format!(
-            "# ROLE\n\
-            You are a conversational language exchange partner. Your goal is to keep the conversation flowing naturally in the {} language. Adapt your vocabulary and sentence complexity to match the student's current proficiency level. Only correct errors if they severely impede understanding; otherwise, let minor mistakes slide to build the student's confidence. End each of your turns with a relevant follow-up question to encourage the student to keep talking..\n\n",
+            "Role: {} language partner. Keep conversation flowing naturally. Adapt to user's level. Ignore minor errors. End with a short follow-up question.\n\n\
+            Rules:\n\
+            - Max 3 sentences.\n\
+            - No random greetings mid-chat.\n\
+            - You control an avatar. Include exact animation tags: [anim:shrug], [anim:greet], [anim:peace], [anim:shoot], [anim:spin], [anim:pose], [anim:squat], [anim:full]. No other tags.\n",
             language
         ));
 
-        prompt.push_str(
-            "# CONVERSATION DYNAMICS\n\
-            - CRITICAL: Keep responses extremely concise (typically under 3 sentences). No long paragraphs unless explicitly asked.\n\
-            - CRITICAL: Do NOT arbitrarily greet the user (e.g., saying 'Hello', 'Bonjour') mid-conversation. Just respond directly to their last message.\n\n"
-        );
-
-        prompt.push_str(
-            "# AVATAR & ANIMATIONS\n\
-            - You control a 3D avatar. You MUST include animation tags in your response text.\n\
-            - Available tags: [anim:shrug], [anim:greet], [anim:peace], [anim:shoot], [anim:spin], [anim:pose], [anim:squat], [anim:full].\n\
-            - Use these animation tags to convey emotions (e.g., 'That is interesting! [anim:shrug]'). Do NOT use or invent any other bracketed tags like [expression:smile] or *smiles*.\n\n"
-        );
-
         if use_expression_tags {
             prompt.push_str(
-                "# EXPRESSION TAGS\n\
-                Due to engine constraints, format natural human nuances STRICTLY as follows. Do NOT use unsupported tags like <scream> or <yawn>.\n\
-                1. <laugh> : Triple sequence at the END (e.g., 'That was funny. <laugh> <laugh> <laugh>').\n\
-                2. <breath> : Triple sequence at the BEGINNING (e.g., '<breath> <breath> <breath> I made it.').\n\
-                3. <sad> : Triple combination at BOTH ends (e.g., '<sad> <sad> <sad> It ended. <sad> <sad> <sad>').\n\n"
+                "- Expression tags (use exactly as shown):\n\
+                  * <laugh> : END of sentence (x3)\n\
+                  * <breath> : START of sentence (x3)\n\
+                  * <sad> : BOTH ends of sentence (x3)\n"
             );
         }
 
         if !cfg!(target_os = "android") && !context.trim().is_empty() {
-            prompt.push_str(
-                "# TEXTBOOK CONTEXT\n\
-                The following excerpts are from the user's currently active textbook. Use this information to answer questions or guide the conversation:\n"
-            );
+            prompt.push_str("Textbook Context (use to guide conversation):\n");
             prompt.push_str(context);
             prompt.push_str("\n\n");
         }
 
         if let Some(theme) = active_theme {
-            prompt.push_str(&format!(
-                "# CURRENT THEME: {}\n\
-                - Naturally steer the conversation towards this thematic topic.\n\
-                - Introduce relevant vocabulary associated with this theme in your responses.\n\n",
-                theme
-            ));
+            prompt.push_str(&format!("Theme: {}. Steer chat towards this and use related words.\n\n", theme));
         }
     }
 
-    prompt.push_str("# LANGUAGE RULES\n");
     if skill_level.trim().eq_ignore_ascii_case("beginner") {
         prompt.push_str(&format!(
-            "- The user is an absolute beginner. You must act as a strict language tutor, but speak primarily in English to avoid overwhelming them.\n\
-            - Do NOT write full sentences in {}. Instead, actively teach the language by introducing 1-2 new {} words or very short phrases per response.\n\
-            - Always explain the meaning of the {} vocabulary you introduce.\n\
-            - CRITICAL: Whenever using a {} word, write it EXCLUSIVELY in its native script.\n",
-            language, language, language, language
+            "User level: Beginner. Act as strict tutor. Speak mostly English. Introduce 1-2 new {} words/phrases per turn with meaning. Use native script for {} words.\n",
+            language, language
         ));
     } else {
         prompt.push_str(&format!(
-            "- The user is at a {} level. Speak almost entirely in {}.\n\
-            - Adjust vocabulary and sentence structure to match their level.\n",
+            "User level: {}. Speak almost entirely in {}. Adapt vocabulary to their level.\n",
             skill_level, language
         ));
     }
+    
     prompt.push_str(
-        "- UNDER NO CIRCUMSTANCES provide phonetic transcriptions, romanizations (e.g., pinyin, romaji), or English alphabet spellings for target language words.\n\
-        - ALWAYS output text with perfect grammatical orthography, using proper accents, diacritical marks, and standard punctuation required by the native script.\n\
-        - Do NOT use parentheses (brackets) in your conversational responses. Integrate translations or clarifications naturally into your sentences instead.\n\n"
+        "No romanization/phonetics. Use perfect orthography/punctuation in native script. No parentheses.\n\n"
     );
 
     // 9. Output Formatting Constraint (Crucial this goes at the end)

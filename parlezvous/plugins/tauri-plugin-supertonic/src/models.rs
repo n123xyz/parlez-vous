@@ -7,6 +7,7 @@ pub struct GenerateTtsRequest {
   pub lang: String,
   pub speed: f32,
   pub steps: u32,
+  pub voice_style: String,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]

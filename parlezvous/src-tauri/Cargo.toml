@@ -38,6 +38,7 @@ regex = "1.12.3"
 tauri-plugin-litert = { path = "../plugins/tauri-plugin-litert" }
 tauri-plugin-supertonic = { path = "../plugins/tauri-plugin-supertonic" }
 tokenizers = "0.19"
+schemars = "1.2"
 
 [dev-dependencies]
 async-trait = "0.1.89"

@@ -729,7 +729,7 @@
         loader.register((parser: any) => new VRMAnimationLoaderPlugin(parser));
 
         loader.load(
-            '/vrm/avatar.vrm',
+            '/vrm/' + settingsState.activeVrm,
             (gltf: any) => {
                 const vrm = gltf.userData.vrm as any;
                 if (scene) scene.add(vrm.scene);

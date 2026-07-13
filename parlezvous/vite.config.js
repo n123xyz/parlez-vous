@@ -11,6 +11,7 @@ export default defineConfig(async () => ({
   build: {
     target: "esnext"
   },
+  assetsInclude: ['**/*.vrm'],
   optimizeDeps: {
     esbuildOptions: {
       target: "esnext"

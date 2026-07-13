@@ -34,6 +34,7 @@
             <a href="/conjugator" class="text-zinc-400 hover:text-yellow-200 font-medium transition-colors text-sm md:text-base {currentPath === '/conjugator' ? 'text-yellow-200' : ''}">Conjugator</a>
             <a href="/calendar" class="text-zinc-400 hover:text-yellow-200 font-medium transition-colors text-sm md:text-base {currentPath === '/calendar' ? 'text-yellow-200' : ''}">Calendar</a>
             <a href="/canvas" class="text-zinc-400 hover:text-yellow-200 font-medium transition-colors text-sm md:text-base {currentPath === '/canvas' ? 'text-yellow-200' : ''}">Canvas</a>
+            <a href="/coding" class="text-zinc-400 hover:text-yellow-200 font-medium transition-colors text-sm md:text-base {currentPath === '/coding' ? 'text-yellow-200' : ''}">Coding</a>
             <a href="/avatar" class="text-zinc-400 hover:text-yellow-200 font-medium transition-colors text-sm md:text-base {currentPath === '/avatar' ? 'text-yellow-200' : ''}">Avatar</a>
             <a href="/map" class="text-zinc-400 hover:text-yellow-200 font-medium transition-colors text-sm md:text-base {currentPath === '/map' ? 'text-yellow-200' : ''}">Map</a>
             <a href="/vision" class="text-zinc-400 hover:text-yellow-200 font-medium transition-colors text-sm md:text-base {currentPath === '/vision' ? 'text-yellow-200' : ''}">Vision</a>

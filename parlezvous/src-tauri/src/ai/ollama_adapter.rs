@@ -6,8 +6,8 @@ use ollama_rs::{
     generation::{
         chat::{request::ChatMessageRequest, ChatMessage as OllamaChatMessage},
         completion::request::GenerationRequest,
-        parameters::FormatType,
     },
+    models::ModelOptions,
     Ollama,
 };
 use rusqlite::Connection;
@@ -61,11 +61,15 @@ impl OllamaAdapter {
         let mut attempts = 0;
 
         while attempts < max_attempts {
+            let options = ModelOptions::default().num_predict(300);
             let request =
-                GenerationRequest::new(model.to_string(), prompt.clone()).format(FormatType::Json);
+                GenerationRequest::new(model.to_string(), prompt.clone()).options(options);
 
             let client = self.get_client()?;
-            let response = client.generate(request).await.map_err(|e| e.to_string())?;
+            let response = tokio::time::timeout(std::time::Duration::from_secs(30), client.generate(request))
+                .await
+                .map_err(|_| "Ollama generation timed out after 30 seconds.".to_string())?
+                .map_err(|e| e.to_string())?;
             let content = response.response;
 
             let json_content =
@@ -184,6 +188,8 @@ impl LlmProvider for OllamaAdapter {
         for (i, msg) in history.into_iter().enumerate() {
             let mut o_msg = if msg.role == "user" {
                 OllamaChatMessage::user(msg.content)
+            } else if msg.role == "system" {
+                OllamaChatMessage::system(msg.content)
             } else {
                 OllamaChatMessage::assistant(msg.content)
             };
@@ -280,10 +286,14 @@ impl LlmProvider for OllamaAdapter {
         let mut attempts = 0;
 
         while attempts < max_attempts {
-            let request = GenerationRequest::new(model.clone(), prompt.clone()).format(FormatType::Json);
+            let options = ModelOptions::default().num_predict(300);
+            let request = GenerationRequest::new(model.clone(), prompt.clone()).options(options);
 
             let client = self.get_client()?;
-            let response = client.generate(request).await.map_err(|e| e.to_string())?;
+            let response = tokio::time::timeout(std::time::Duration::from_secs(30), client.generate(request))
+                .await
+                .map_err(|_| "Ollama generation timed out after 30 seconds.".to_string())?
+                .map_err(|e| e.to_string())?;
             let content = response.response;
 
             let json_content =
@@ -297,7 +307,8 @@ impl LlmProvider for OllamaAdapter {
                 Ok(mut parsed) => {
                     // One-pass revision/verification
                     let verification_prompt = super::build_conjugation_verification_prompt(&language, &parsed);
-                    let verify_request = GenerationRequest::new(model.clone(), verification_prompt).format(FormatType::Json);
+                    let verify_options = ModelOptions::default().num_predict(4096);
+                    let verify_request = GenerationRequest::new(model.clone(), verification_prompt).options(verify_options);
                     
                     println!("[Conjugation] Running 1-pass verification on candidate...");
                     if let Ok(client) = self.get_client() {
@@ -379,6 +390,102 @@ impl LlmProvider for OllamaAdapter {
         }
 
         Err("Unknown error in embedding generation loop".to_string())
+    }
+
+    async fn generate_coding_puzzle(
+        &self,
+        language: String,
+        model: String,
+        theme: String,
+        puzzle_type: String,
+    ) -> Result<String, String> {
+        let (system_prompt, user_prompt) = super::build_coding_puzzle_prompt(&language, &theme, &puzzle_type);
+        let max_attempts = 3;
+        let mut attempts = 0;
+
+        let messages = vec![
+            OllamaChatMessage::system(system_prompt.clone()),
+            OllamaChatMessage::user(user_prompt.clone()),
+        ];
+
+        while attempts < max_attempts {
+            println!("[generate_coding_puzzle] Attempt {}/{} starting. Prompt length: {}", attempts + 1, max_attempts, system_prompt.len() + user_prompt.len());
+            let options = ModelOptions::default().num_predict(4096);
+            let request = ollama_rs::generation::chat::request::ChatMessageRequest::new(model.clone(), messages.clone()).options(options);
+            
+            let client = self.get_client()?;
+            println!("[generate_coding_puzzle] Connected to Ollama, sending chat request...");
+            let response = tokio::time::timeout(std::time::Duration::from_secs(45), client.send_chat_messages(request))
+                .await
+                .map_err(|_| {
+                    println!("[generate_coding_puzzle] Ollama generation timed out after 45 seconds.");
+                    "Ollama generation timed out after 45 seconds.".to_string()
+                })?
+                .map_err(|e| {
+                    println!("[generate_coding_puzzle] Error from Ollama: {}", e);
+                    e.to_string()
+                })?;
+            
+            let mut content = response.message.content;
+            println!("[generate_coding_puzzle] Received response from Ollama! Length: {}", content.len());
+
+            // Strip <think> blocks generated by reasoning models
+            while let (Some(start), Some(end)) = (content.find("<think>"), content.find("</think>")) {
+                if start < end {
+                    let mut new_content = content[..start].to_string();
+                    new_content.push_str(&content[end + "</think>".len()..]);
+                    content = new_content;
+                } else {
+                    break;
+                }
+            }
+
+            let json_content = if let (Some(start), Some(end)) = (content.find('{'), content.rfind('}')) {
+                &content[start..=end]
+            } else {
+                &content
+            };
+            
+            match serde_json::from_str::<serde_json::Value>(json_content) {
+                Ok(mut value) => {
+                    if puzzle_type == "keystone" {
+                        if let Some(code) = value.get("code_with_blank").and_then(|v| v.as_str()) {
+                            if !code.contains("___BLANK___") {
+                                let mut recovered = false;
+                                if let Some(exact) = value.get("exact_answer").and_then(|v| v.as_str()) {
+                                    if !exact.trim().is_empty() && code.contains(exact) {
+                                        let new_code = code.replacen(exact, "___BLANK___", 1);
+                                        if let Some(obj) = value.as_object_mut() {
+                                            obj.insert("code_with_blank".to_string(), serde_json::Value::String(new_code));
+                                            recovered = true;
+                                            println!("[generate_coding_puzzle] Recovered missing ___BLANK___ using exact_answer");
+                                        }
+                                    }
+                                }
+
+                                if !recovered {
+                                    println!("[generate_coding_puzzle] Rejection: Model failed to include ___BLANK___ in keystone puzzle. Retrying...");
+                                    attempts += 1;
+                                    if attempts >= max_attempts {
+                                        return Err(format!("The AI model failed to include ___BLANK___ after {} attempts.", max_attempts));
+                                    }
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+                    return Ok(value.to_string());
+                }
+                Err(err) => {
+                    attempts += 1;
+                    println!("LLM Coding JSON Parse Error on attempt {}: {} \nRaw output: {}", attempts, err, content);
+                    if attempts >= max_attempts {
+                        return Err(format!("The AI model failed to produce valid JSON after {} attempts.", max_attempts));
+                    }
+                }
+            }
+        }
+        Err("Failed to generate coding puzzle".to_string())
     }
 }
 

@@ -17,6 +17,7 @@ pub async fn generate_supertonic_tts(
             lang,
             speed,
             steps,
+            voice_style: "voice_styles/F1.json".to_string(),
         },
     )
     .await

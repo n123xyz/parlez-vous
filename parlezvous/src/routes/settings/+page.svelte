@@ -4,6 +4,7 @@
     import { onMount } from 'svelte';
     import toast from 'svelte-french-toast';
     import { invoke } from '@tauri-apps/api/core';
+    import { getThemes } from '$lib/coding/utils';
 
     import { listen } from '@tauri-apps/api/event';
 
@@ -20,6 +21,12 @@
 
     let tokenizerExists = $state(false);
     let isDownloadingTokenizer = $state(false);
+
+    let codingCategories = $state<string[]>([]);
+    let showAdvancedMobile = $state(false);
+
+    const vrmGlob = import.meta.glob('../../../static/vrm/*.vrm');
+    const availableVrms = Object.keys(vrmGlob).map(path => path.split('/').pop() || '');
 
     async function checkLitertModel() {
         try {
@@ -137,6 +144,10 @@
             checkTokenizer();
         });
 
+        getThemes().then(themes => {
+            codingCategories = Object.keys(themes);
+        }).catch(e => console.error("Failed to load themes for settings", e));
+
         const unlisten = listen<{ downloaded: number, total: number, state?: string }>('download_progress', (event) => {
             const { downloaded, total, state } = event.payload;
             isDownloadingLitert = true;
@@ -206,6 +217,7 @@
     <h2 class="text-3xl font-bold text-yellow-200 mb-8 border-b border-zinc-800 pb-4">Settings</h2>
 
     <div class="bg-zinc-900 p-8 rounded-2xl border border-zinc-800 shadow-xl space-y-8">
+        {#if !isAndroidTauri || showAdvancedMobile}
         <div>
             <h3 class="text-xl font-medium text-zinc-200 mb-2">Local LLM Configuration</h3>
             <p class="text-zinc-400 text-sm mb-6">Select the Ollama model to power Parlez-Vous. A capable instruct model like Gemma or Llama is recommended.</p>
@@ -252,6 +264,7 @@
                 </div>
             {/if}
         </div>
+        {/if}
 
         {#if isAndroidTauri}
         <div>
@@ -380,6 +393,17 @@
                     {/if}
                 </div>
             </div>
+
+            <div class="bg-zinc-800 p-4 rounded-xl border border-zinc-700 flex items-center justify-between mt-4">
+                <div>
+                    <h4 class="text-lg font-medium text-zinc-200">Advanced Mode</h4>
+                    <p class="text-zinc-400 text-sm">Enable off-device inference (Ollama) and custom server URLs.</p>
+                </div>
+                <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" bind:checked={showAdvancedMobile} class="sr-only peer">
+                    <div class="w-11 h-6 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-yellow-400"></div>
+                </label>
+            </div>
         </div>
         {/if}
 
@@ -400,6 +424,36 @@
                 </div>
 
                 <div class="flex flex-col gap-2">
+                    <label for="programmingLanguageInput" class="text-sm font-medium text-zinc-400">Target Programming Language</label>
+                    <input 
+                        id="programmingLanguageInput"
+                        type="text"
+                        bind:value={settingsState.targetProgrammingLanguage}
+                        placeholder="e.g. Python, Javascript, Rust"
+                        class="bg-zinc-950 border border-zinc-700 text-zinc-100 rounded-xl px-4 py-3 focus:outline-none focus:border-yellow-200 transition-colors"
+                    >
+                </div>
+
+                <div class="flex flex-col gap-2">
+                    <label for="codingCategorySelect" class="text-sm font-medium text-zinc-400">Coding Puzzle Category</label>
+                    <div class="relative">
+                        <select 
+                            id="codingCategorySelect"
+                            bind:value={settingsState.codingThemeCategory}
+                            class="w-full bg-zinc-950 border border-zinc-700 text-zinc-100 rounded-xl px-4 py-3 focus:outline-none focus:border-yellow-200 transition-colors cursor-pointer appearance-none"
+                        >
+                            <option value="All">All Categories</option>
+                            {#each codingCategories as category}
+                                <option value={category}>{category}</option>
+                            {/each}
+                        </select>
+                        <div class="absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none text-zinc-500">
+                            ▼
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex flex-col gap-2">
                     <label for="skillLevelSelect" class="text-sm font-medium text-zinc-400">Skill Level</label>
                     <div class="relative">
                         <select 
@@ -417,6 +471,50 @@
                         </div>
                     </div>
                 </div>
+
+                <div class="flex flex-col gap-2">
+                    <label for="vrmSelect" class="text-sm font-medium text-zinc-400">Active VRM Avatar</label>
+                    <div class="relative">
+                        <select 
+                            id="vrmSelect"
+                            bind:value={settingsState.activeVrm}
+                            class="w-full bg-zinc-950 border border-zinc-700 text-zinc-100 rounded-xl px-4 py-3 focus:outline-none focus:border-yellow-200 transition-colors cursor-pointer appearance-none"
+                        >
+                            {#each availableVrms as vrmName}
+                                <option value={vrmName}>{vrmName}</option>
+                            {/each}
+                        </select>
+                        <div class="absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none text-zinc-500">
+                            ▼
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex flex-col gap-2">
+                    <label for="voiceStyleSelect" class="text-sm font-medium text-zinc-400">Supertonic Voice Style</label>
+                    <div class="relative">
+                        <select 
+                            id="voiceStyleSelect"
+                            bind:value={settingsState.supertonicVoiceStyle}
+                            class="w-full bg-zinc-950 border border-zinc-700 text-zinc-100 rounded-xl px-4 py-3 focus:outline-none focus:border-yellow-200 transition-colors cursor-pointer appearance-none"
+                        >
+                            <option value="voice_styles/F1.json">F1</option>
+                            <option value="voice_styles/F2.json">F2</option>
+                            <option value="voice_styles/F3.json">F3</option>
+                            <option value="voice_styles/F4.json">F4</option>
+                            <option value="voice_styles/F5.json">F5</option>
+                            <option value="voice_styles/M1.json">M1</option>
+                            <option value="voice_styles/M2.json">M2</option>
+                            <option value="voice_styles/M3.json">M3</option>
+                            <option value="voice_styles/M4.json">M4</option>
+                            <option value="voice_styles/M5.json">M5</option>
+                        </select>
+                        <div class="absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none text-zinc-500">
+                            ▼
+                        </div>
+                    </div>
+                </div>
+                {#if !isAndroidTauri || showAdvancedMobile}
                 <div class="flex flex-col gap-2">
                     <label for="asrInput" class="text-sm font-medium text-zinc-400">ASR Server URL</label>
                     <input 
@@ -466,6 +564,7 @@
                         </div>
                     </div>
                 </div>
+                {/if}
 
                 <div class="flex flex-col gap-2 mt-4 pt-4 border-t border-zinc-800">
                     <label for="hfTokenInput" class="text-sm font-medium text-zinc-400">HuggingFace Access Token</label>
@@ -480,6 +579,7 @@
                     >
                 </div>
 
+                {#if isAndroidTauri}
                 <div class="flex flex-col gap-2 mt-4">
                     <label for="litertAcceleratorSelect" class="text-sm font-medium text-zinc-400">LiteRT Hardware Accelerator</label>
                     <p class="text-xs text-zinc-500 mb-1">Forces on-device inference to run on specific hardware if supported.</p>
@@ -515,6 +615,7 @@
                         class="bg-zinc-950 border border-zinc-700 text-zinc-100 rounded-xl px-4 py-3 focus:outline-none focus:border-yellow-200 transition-colors"
                     >
                 </div>
+                {/if}
             </div>
             
             <button 
@@ -526,6 +627,7 @@
             </button>
         </div>
 
+        {#if !isAndroidTauri || showAdvancedMobile}
         <div>
             <h3 class="text-xl font-medium text-zinc-200 mb-2">System Status</h3>
             <div class="bg-zinc-800 p-4 rounded-xl border border-zinc-700 flex flex-col gap-3">
@@ -538,5 +640,6 @@
                 </div>
             </div>
         </div>
+        {/if}
     </div>
 </div>

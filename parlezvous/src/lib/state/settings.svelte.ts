@@ -11,12 +11,16 @@ export const settingsState = $state({
     huggingFaceToken: '',
     litertAccelerator: 'Auto',
     litertMaxTokens: 1024,
+    targetProgrammingLanguage: 'python',
+    codingThemeCategory: 'All',
+    activeVrm: 'avatar.vrm',
+    supertonicVoiceStyle: 'voice_styles/F1.json',
     isLoaded: false
 });
 
 export async function loadSettings() {
     try {
-        const settings = await invoke<{ target_language: string, tts_server_url: string, asr_server_url: string, ollama_server_url: string, embedding_model: string, active_model: string, huggingface_token: string | null, litert_accelerator: string, litert_max_tokens: number }>('get_settings');
+        const settings = await invoke<{ target_language: string, tts_server_url: string, asr_server_url: string, ollama_server_url: string, embedding_model: string, active_model: string, huggingface_token: string | null, litert_accelerator: string, litert_max_tokens: number, target_programming_language: string, coding_theme_category: string, active_vrm: string, supertonic_voice_style: string }>('get_settings');
         settingsState.targetLanguage = settings.target_language;
         settingsState.ttsServerUrl = settings.tts_server_url;
         settingsState.asrServerUrl = settings.asr_server_url;
@@ -26,6 +30,10 @@ export async function loadSettings() {
         settingsState.huggingFaceToken = settings.huggingface_token || '';
         settingsState.litertAccelerator = settings.litert_accelerator;
         settingsState.litertMaxTokens = settings.litert_max_tokens;
+        settingsState.targetProgrammingLanguage = settings.target_programming_language;
+        settingsState.codingThemeCategory = settings.coding_theme_category;
+        settingsState.activeVrm = settings.active_vrm;
+        settingsState.supertonicVoiceStyle = settings.supertonic_voice_style;
 
         const skillLevel = await invoke<string>('get_user_skill_level');
         settingsState.skillLevel = skillLevel;
@@ -50,7 +58,11 @@ export async function saveSettings() {
                 active_model: settingsState.activeModel,
                 huggingface_token: settingsState.huggingFaceToken.trim() !== '' ? settingsState.huggingFaceToken : null,
                 litert_accelerator: settingsState.litertAccelerator,
-                litert_max_tokens: Number(settingsState.litertMaxTokens) || 5000
+                litert_max_tokens: Number(settingsState.litertMaxTokens) || 5000,
+                target_programming_language: settingsState.targetProgrammingLanguage,
+                coding_theme_category: settingsState.codingThemeCategory,
+                active_vrm: settingsState.activeVrm,
+                supertonic_voice_style: settingsState.supertonicVoiceStyle
             }
         });
 

@@ -9,5 +9,9 @@ node_modules
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 
+# Ignore non-redistributable vrms
+static/vrm/avatar_2.vrm
+static/vrm/wom.vrm
+static/vrm/green.vrm
 # Ignore proprietary AI runtimes
 libraries/**/*.so
