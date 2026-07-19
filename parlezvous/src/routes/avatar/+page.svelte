@@ -7,7 +7,7 @@
     import { marked } from 'marked';
     import { open } from '@tauri-apps/plugin-dialog';
     import { initTTSAudio, playTTS, setPlaybackRate, ttsPlaybackRate, setLipSyncNode, playSupertonicTTS, playSmartTTS } from '$lib/tts';
-    import { CURRICULUM_TIERS, getTierFromXP } from '$lib/curriculum';
+    import { CURRICULUM_TIERS, getTierFromXP, getRandomThemeAndSubthemeForTier } from '$lib/curriculum';
     import { timeTracker } from '$lib/state/timeTracker.svelte.ts';
 
     // Module variables for heavy libraries to avoid TDZ (Temporal Dead Zone) crashes
@@ -848,13 +848,29 @@
                 return msg;
             }).reverse();
 
+            let targetTheme = mapFollowMode ? activeThemeId : null;
+            let targetSubtheme = null;
+            try {
+                const curriculum: any = await invoke('get_curriculum', { language: settingsState.targetLanguage });
+                const tier = getTierFromXP(curriculum.total_xp || 0);
+                const randomTopic = getRandomThemeAndSubthemeForTier(tier);
+                
+                if (!mapFollowMode) {
+                    targetTheme = randomTopic.theme;
+                }
+                targetSubtheme = randomTopic.subtheme;
+            } catch(e) {
+                console.error("Failed to fetch tier for avatar chat:", e);
+            }
+
             const response = (await invoke('chat_with_avatar', {
                 history: historyPayload,
                 model: settingsState.activeModel,
                 language: settingsState.targetLanguage,
                 activeTextbook: activeTextbook,
                 activePage: activePage,
-                activeTheme: mapFollowMode ? activeThemeId : null,
+                activeTheme: targetTheme,
+                activeSubtheme: targetSubtheme,
                 audioBase64: audioBase64 || null
             })) as { response: string; idealized_correction?: string; context_summary?: string };
 

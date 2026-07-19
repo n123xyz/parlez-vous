@@ -251,7 +251,36 @@ pub const SCHEMA_V3: &str = "
     PRAGMA user_version = 3;
 ";
 
-const DB_VERSION_NUM: usize = 3;
+pub const SCHEMA_V4: &str = "
+    CREATE TABLE language_questions_queue (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        question_type TEXT NOT NULL,
+        question_data TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    PRAGMA user_version = 4;
+";
+
+pub const SCHEMA_V5: &str = "
+    CREATE TABLE coding_questions_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        question_type TEXT NOT NULL,
+        question_data TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE language_questions_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        question_type TEXT NOT NULL,
+        question_data TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    PRAGMA user_version = 5;
+";
+
+const DB_VERSION_NUM: usize = 5;
 
 pub fn init_db(app_handle: &tauri::AppHandle) -> Result<Connection, String> {
     let app_dir = app_handle
@@ -296,7 +325,7 @@ pub fn init_db(app_handle: &tauri::AppHandle) -> Result<Connection, String> {
         }
     }
 
-    let schemas = [SCHEMA_V1, SCHEMA_V2, SCHEMA_V3];
+    let schemas = [SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5];
 
     for i in 0..DB_VERSION_NUM {
         if user_version == i as i32 {

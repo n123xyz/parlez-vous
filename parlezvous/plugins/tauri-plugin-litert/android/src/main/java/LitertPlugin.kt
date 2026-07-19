@@ -52,6 +52,7 @@ class GenerateChatArgs {
   var reset: Boolean = false
   var audioBase64: String? = null
   var imageUri: String? = null
+  var systemInstruction: String? = null
 }
 
 @TauriPlugin
@@ -390,9 +391,9 @@ class LitertPlugin(private val activity: Activity): Plugin(activity) {
                 // Store the conversation config for later reuse
                 conversationConfig = ConversationConfig(
                     samplerConfig = SamplerConfig(
-                        topK = 40,
+                        topK = 64,
                         topP = 0.95,
-                        temperature = 0.8
+                        temperature = 1.0
                     )
                 )
                 conversation = engine!!.createConversation(conversationConfig!!)
@@ -423,7 +424,17 @@ class LitertPlugin(private val activity: Activity): Plugin(activity) {
             try {
                 if (args.reset || conversation == null) {
                     conversation?.close()
-                    conversation = engine!!.createConversation(conversationConfig ?: ConversationConfig())
+                    
+                    val config = ConversationConfig(
+                        systemInstruction = if (!args.systemInstruction.isNullOrEmpty()) Contents.of(args.systemInstruction!!) else null,
+                        samplerConfig = conversationConfig?.samplerConfig ?: SamplerConfig(
+                            topK = 64,
+                            topP = 0.95,
+                            temperature = 1.0
+                        )
+                    )
+                    conversationConfig = config
+                    conversation = engine!!.createConversation(config)
                 }
                 
                 var responseText = ""
@@ -480,8 +491,6 @@ class LitertPlugin(private val activity: Activity): Plugin(activity) {
                 }
                 
                 if (args.prompt.trim().isNotEmpty()) {
-                    // Try to inject <image> if not present in multimodal?
-                    // Actually, just add the text after the media.
                     contents.add(Content.Text(args.prompt))
                 }
                 
