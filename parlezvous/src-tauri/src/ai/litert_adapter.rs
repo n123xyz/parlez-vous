@@ -144,7 +144,7 @@ impl LiteRtAdapter {
         let gemma_prompt = format!("<start_of_turn>user\n{}<end_of_turn>\n<start_of_turn>model\n", prompt);
 
         while attempts < max_attempts {
-            let payload = tauri_plugin_litert::GenerateChatRequest { prompt: gemma_prompt.clone(), reset: true, audio_base64: None, image_uri: None };
+            let payload = tauri_plugin_litert::GenerateChatRequest { prompt: gemma_prompt.clone(), reset: true, audio_base64: None, image_uri: None, system_instruction: None };
             
             let response = match self.app_handle.litert().generate_chat(payload) {
                 Ok(res) => res.response,
@@ -286,7 +286,7 @@ impl LlmProvider for LiteRtAdapter {
             summary_prompt.push_str("\n\nSummary:");
             
             let gemma_summary_prompt = format!("<start_of_turn>user\n{}<end_of_turn>\n<start_of_turn>model\n", summary_prompt);
-            let payload = tauri_plugin_litert::GenerateChatRequest { prompt: gemma_summary_prompt, reset: true, audio_base64: None, image_uri: None };
+            let payload = tauri_plugin_litert::GenerateChatRequest { prompt: gemma_summary_prompt, reset: true, audio_base64: None, image_uri: None, system_instruction: None };
             
             let summary_text = match self.app_handle.litert().generate_chat(payload) {
                 Ok(res) => res.response.trim().to_string(),

@@ -79,6 +79,7 @@
     const VOWELS = ['ㅏ', 'ㅐ', 'ㅑ', 'ㅒ', 'ㅓ', 'ㅔ', 'ㅕ', 'ㅖ', 'ㅗ', 'ㅘ', 'ㅙ', 'ㅚ', 'ㅛ', 'ㅜ', 'ㅝ', 'ㅞ', 'ㅟ', 'ㅠ', 'ㅡ', 'ㅢ', 'ㅣ'];
     const FINALS = ['', 'ㄱ', 'ㄲ', 'ㄳ', 'ㄴ', 'ㄵ', 'ㄶ', 'ㄷ', 'ㄹ', 'ㄺ', 'ㄻ', 'ㄼ', 'ㄽ', 'ㄾ', 'ㄿ', 'ㅀ', 'ㅁ', 'ㅂ', 'ㅄ', 'ㅅ', 'ㅆ', 'ㅇ', 'ㅈ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'];
 
+    let isKorean = $derived(settingsState.targetLanguage?.trim().toLowerCase() === 'korean');
     let showHandwritingPanel = $state(false);
     let currentSlot = $state<'initial' | 'vowel' | 'final'>('initial');
     let blockInitial = $state<string | null>(null);
@@ -181,6 +182,31 @@
         }
     }
 
+    async function loadChatHistory() {
+        try {
+            const history: any = await invoke('get_chat_history');
+            if (history && Array.isArray(history)) {
+                chatHistory = history.map(h => ({
+                    role: h.role,
+                    content: h.content,
+                    correction: h.correction,
+                    audioBase64: h.audioBase64
+                }));
+            }
+        } catch (e) {
+            console.error("Failed to load chat history:", e);
+        }
+    }
+
+    async function clearChat() {
+        try {
+            await invoke('clear_chat_history');
+            chatHistory = [];
+        } catch (e) {
+            console.error("Failed to clear chat:", e);
+        }
+    }
+
     onMount(async () => {
         // Dynamically import the heavy libraries ONLY when the component mounts.
         // This hides them from SvelteKit's hover-preload mechanism.
@@ -202,6 +228,7 @@
         createWLipSyncNode = wlipsyncModule.createWLipSyncNode;
 
         await loadTextbooks();
+        await loadChatHistory();
         
         try {
             const curr: any = await invoke('get_curriculum', { language: settingsState.targetLanguage });
@@ -816,7 +843,15 @@
             displayInput = "🎤 [Audio Message]";
         }
 
-        chatHistory = [...chatHistory, { role: 'user', content: displayInput, audioBase64: audioBase64 }];
+        let newMsg = { role: 'user', content: displayInput, audioBase64: audioBase64 };
+        chatHistory = [...chatHistory, newMsg];
+        invoke('save_chat_message', {
+            role: newMsg.role,
+            content: newMsg.content,
+            correction: null,
+            audioBase64: newMsg.audioBase64 || null
+        }).catch(e => console.error(e));
+        
         currentInput = '';
         isChatting = true;
         
@@ -876,6 +911,7 @@
 
             if (response.idealized_correction && response.idealized_correction !== "null" && response.idealized_correction.trim() !== "") {
                 chatHistory[chatHistory.length - 1].correction = response.idealized_correction;
+                // Note: Updating existing row correction is not implemented, but not critical
             }
 
             if (response.context_summary) {
@@ -885,8 +921,27 @@
                     lastUserMsg,
                     { role: 'assistant', content: response.response }
                 ];
+                
+                try {
+                    await invoke('clear_chat_history');
+                    for (const msg of chatHistory) {
+                        await invoke('save_chat_message', {
+                            role: msg.role,
+                            content: msg.content,
+                            correction: msg.correction || null,
+                            audioBase64: msg.audioBase64 || null
+                        });
+                    }
+                } catch (e) { console.error("Failed to sync summary", e); }
             } else {
-                chatHistory = [...chatHistory, { role: 'assistant', content: response.response }];
+                let newMsg = { role: 'assistant', content: response.response };
+                chatHistory = [...chatHistory, newMsg];
+                invoke('save_chat_message', {
+                    role: newMsg.role,
+                    content: newMsg.content,
+                    correction: null,
+                    audioBase64: null
+                }).catch(e => console.error(e));
             }
             
             await tick();
@@ -898,7 +953,9 @@
 
         } catch (e) {
             console.error('Chat failed:', e);
-            chatHistory = [...chatHistory, { role: 'assistant', content: 'Sorry, I encountered an error. ' + e }];
+            let errorMsg = { role: 'assistant', content: 'Sorry, I encountered an error. ' + e };
+            chatHistory = [...chatHistory, errorMsg];
+            // Don't save error messages to history to prevent permanent pollution
         } finally {
             isChatting = false;
         }
@@ -969,7 +1026,7 @@
         </div>
     {/if}
 
-    <div class="shrink-0 min-w-0 {viewMode === 'avatar' ? 'flex-1 h-full' : (showHandwritingPanel ? 'h-[22vh]' : 'h-[40vh]')} md:h-auto md:flex-1 flex flex-col gap-2 md:gap-6 min-h-0 transition-all duration-300 {viewMode === 'chat' ? 'hidden' : ''}">
+    <div class="shrink-0 min-w-0 {viewMode === 'avatar' ? 'flex-1 h-full' : (showHandwritingPanel && isKorean ? 'h-[22vh]' : 'h-[40vh]')} md:h-auto md:flex-1 flex flex-col gap-2 md:gap-6 min-h-0 transition-all duration-300 {viewMode === 'chat' ? 'hidden' : ''}">
         <div class="flex-1 bg-zinc-900 rounded-3xl overflow-hidden border border-zinc-800 shadow-2xl relative {activeTextbook ? 'max-h-[50%]' : ''}">
             <div bind:this={canvasContainer} bind:clientWidth={containerWidth} bind:clientHeight={containerHeight} class="w-full h-full"></div>
             <div class="absolute top-4 left-4 flex items-center gap-4">
@@ -1059,7 +1116,7 @@
         {/if}
     </div>
 
-    <div class="flex-1 min-w-0 flex flex-col bg-zinc-900 rounded-2xl md:rounded-3xl border border-zinc-800 shadow-xl overflow-hidden md:w-1/3 min-h-0 {showHandwritingPanel ? 'xl:w-[600px]' : ''} {viewMode === 'avatar' ? 'hidden' : ''} {viewMode === 'chat' ? 'md:w-full' : ''}">
+    <div class="flex-1 min-w-0 flex flex-col bg-zinc-900 rounded-2xl md:rounded-3xl border border-zinc-800 shadow-xl overflow-hidden md:w-1/3 min-h-0 {showHandwritingPanel && isKorean ? 'xl:w-[600px]' : ''} {viewMode === 'avatar' ? 'hidden' : ''} {viewMode === 'chat' ? 'md:w-full' : ''}">
         
         <div class="p-4 md:p-6 border-b border-zinc-800 bg-zinc-900/50 backdrop-blur-md flex justify-between items-center shrink-0">
             <div>
@@ -1071,6 +1128,14 @@
                 {#if viewMode === 'chat'}
                     {@render viewModeControls()}
                 {/if}
+                <button 
+                    class="p-2 rounded-xl transition-colors font-bold text-xs uppercase flex items-center gap-1 bg-zinc-800 text-zinc-500 hover:bg-red-500/20 hover:text-red-400"
+                    onclick={clearChat}
+                    title="Clear Chat History"
+                >
+                    <span>🗑️</span>
+                    <span class="hidden sm:inline">Clear</span>
+                </button>
                 <button 
                     class="p-2 rounded-xl transition-colors font-bold text-xs uppercase flex items-center gap-1 {muteTts ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30' : 'bg-zinc-800 text-zinc-500 hover:bg-zinc-700'}"
                     onclick={() => muteTts = !muteTts}
@@ -1192,23 +1257,25 @@
             {/if}
 
             <form class="flex gap-2" onsubmit={(e) => { e.preventDefault(); sendMessage(); }}>
-                <button 
-                    type="button"
-                    onclick={() => { 
-                        showHandwritingPanel = !showHandwritingPanel; 
-                        if (showHandwritingPanel) { 
-                            setTimeout(() => {
-                                initDrawingCanvas();
-                                if (chatScrollContainer) chatScrollContainer.scrollTo({ top: chatScrollContainer.scrollHeight, behavior: 'smooth' });
-                            }, 50); 
-                        } 
-                    }}
-                    class="p-3 rounded-xl transition-colors border flex items-center justify-center shrink-0
-                           {showHandwritingPanel ? 'bg-yellow-200 text-zinc-900 border-yellow-200' : 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:bg-zinc-700 hover:text-yellow-200'}"
-                    title="Handwriting Keyboard"
-                >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path><path d="m15 5 4 4"></path></svg>
-                </button>
+                {#if isKorean}
+                    <button 
+                        type="button"
+                        onclick={() => { 
+                            showHandwritingPanel = !showHandwritingPanel; 
+                            if (showHandwritingPanel) { 
+                                setTimeout(() => {
+                                    initDrawingCanvas();
+                                    if (chatScrollContainer) chatScrollContainer.scrollTo({ top: chatScrollContainer.scrollHeight, behavior: 'smooth' });
+                                }, 50); 
+                            } 
+                        }}
+                        class="p-3 rounded-xl transition-colors border flex items-center justify-center shrink-0
+                               {showHandwritingPanel ? 'bg-yellow-200 text-zinc-900 border-yellow-200' : 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:bg-zinc-700 hover:text-yellow-200'}"
+                        title="Handwriting Keyboard"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path><path d="m15 5 4 4"></path></svg>
+                    </button>
+                {/if}
                 <button 
                     type="button"
                     onclick={toggleMic}
@@ -1265,7 +1332,7 @@
             </form>
         </div>
 
-        {#if showHandwritingPanel}
+        {#if showHandwritingPanel && isKorean}
             <div class="p-3 md:p-4 border-t border-zinc-800 bg-zinc-900 flex flex-col gap-4 shrink-0 shadow-inner overflow-y-auto max-h-[45vh] md:max-h-none relative z-0">
                 <div class="flex flex-col xl:flex-row gap-4 items-center xl:items-stretch">
                     <div class="flex flex-col items-center gap-2 w-full xl:w-auto shrink-0">

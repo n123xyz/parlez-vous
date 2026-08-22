@@ -760,6 +760,64 @@ async fn load_language_queue(
     }).await.map_err(|e| format!("Task failed: {}", e))?
 }
 
+#[tauri::command]
+async fn get_chat_history(state: State<'_, AppState>) -> Result<Vec<serde_json::Value>, String> {
+    let db = state.db.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(|_| "DB lock failed")?;
+        let mut stmt = conn.prepare("SELECT role, content, correction, audio_base64 FROM avatar_chat_history ORDER BY id ASC").map_err(|e| e.to_string())?;
+        
+        let iter = stmt.query_map([], |row| {
+            let role: String = row.get(0)?;
+            let content: String = row.get(1)?;
+            let correction: Option<String> = row.get(2)?;
+            let audio_base64: Option<String> = row.get(3)?;
+            Ok((role, content, correction, audio_base64))
+        }).map_err(|e| e.to_string())?;
+        
+        let mut history = Vec::new();
+        for item in iter {
+            let (role, content, correction, audio_base64) = item.map_err(|e| e.to_string())?;
+            history.push(serde_json::json!({
+                "role": role,
+                "content": content,
+                "correction": correction,
+                "audioBase64": audio_base64
+            }));
+        }
+        Ok(history)
+    }).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn save_chat_message(
+    state: State<'_, AppState>,
+    role: String,
+    content: String,
+    correction: Option<String>,
+    audio_base64: Option<String>,
+) -> Result<(), String> {
+    let db = state.db.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(|_| "DB lock failed")?;
+        conn.execute(
+            "INSERT INTO avatar_chat_history (role, content, correction, audio_base64) VALUES (?1, ?2, ?3, ?4)",
+            &[&role as &dyn rusqlite::ToSql, &content, &correction, &audio_base64],
+        ).map_err(|e| e.to_string())?;
+        Ok(())
+    }).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn clear_chat_history(state: State<'_, AppState>) -> Result<(), String> {
+    let db = state.db.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(|_| "DB lock failed")?;
+        conn.execute("DELETE FROM avatar_chat_history", []).map_err(|e| e.to_string())?;
+        Ok(())
+    }).await.map_err(|e| e.to_string())?
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -870,7 +928,10 @@ pub fn run() {
             load_coding_queue,
             generate_language_puzzle,
             save_language_queue,
-            load_language_queue
+            load_language_queue,
+            get_chat_history,
+            save_chat_message,
+            clear_chat_history
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
