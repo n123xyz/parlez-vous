@@ -282,32 +282,10 @@ pub const SCHEMA_V5: &str = "
 ";
 
 pub const SCHEMA_V6: &str = "
-    CREATE TABLE mathtastic_problems (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        track INTEGER,
-        level INTEGER,
-        mode TEXT,
-        mission_brief TEXT,
-        description TEXT,
-        problem_latex TEXT,
-        tooltip TEXT,
-        true_latex TEXT
-    );
-
-    CREATE TABLE mathtastic_user_progress (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        problem_id INTEGER,
-        completed BOOLEAN DEFAULT 0,
-        FOREIGN KEY(problem_id) REFERENCES mathtastic_problems(id) ON DELETE CASCADE
-    );
-
     PRAGMA user_version = 6;
 ";
 
 pub const SCHEMA_V7: &str = "
-    DROP TABLE IF EXISTS mathtastic_user_progress;
-    DROP TABLE IF EXISTS mathtastic_problems;
-
     CREATE TABLE avatar_chat_history (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         role TEXT NOT NULL,
