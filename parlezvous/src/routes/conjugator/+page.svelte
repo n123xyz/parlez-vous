@@ -309,14 +309,14 @@
     <!-- Header row -->
     <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-            <h1 class="text-3xl font-bold text-yellow-200">Verb Conjugator</h1>
-            <p class="text-zinc-400 mt-2">Practice dynamic conjugations in {settingsState.targetLanguage}.</p>
+            <h1 class="text-3xl font-bold text-yellow-200">Conjugator</h1>
+            <p class="text-xs text-zinc-500 mt-1">{settingsState.targetLanguage}</p>
         </div>
         <div class="flex items-center gap-4">
             <!-- Score badge -->
             {#if history.length > 0}
                 <div class="flex items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-2xl px-5 py-2.5">
-                    <span class="text-xs font-bold tracking-widest text-zinc-500 uppercase">Last 10</span>
+                    <span class="text-xs font-bold tracking-widest text-zinc-500 uppercase">Score</span>
                     <span class="text-2xl font-black tabular-nums"
                         class:text-green-400={recentScore() >= 7}
                         class:text-yellow-200={recentScore() >= 4 && recentScore() < 7}
@@ -345,8 +345,8 @@
             {#if isGenerating}
                 <div class="flex-1 flex items-center justify-center bg-zinc-900/50 rounded-3xl border border-dashed border-zinc-700 min-h-[400px]">
                     <div class="animate-pulse flex flex-col items-center">
-                        <div class="w-16 h-16 border-4 border-yellow-200 border-t-transparent rounded-full animate-spin"></div>
-                        <p class="mt-4 text-zinc-400 font-bold tracking-widest uppercase text-sm">Consulting Grammar...</p>
+                        <div class="w-12 h-12 border-4 border-yellow-200 border-t-transparent rounded-full animate-spin"></div>
+                        <p class="mt-4 text-zinc-400 text-sm">Generating...</p>
                     </div>
                 </div>
             {:else if exercise}
@@ -370,8 +370,7 @@
 
                     <div class="flex flex-col gap-8 items-center text-center">
 
-                        <div class="space-y-2">
-                            <span class="text-xs font-bold tracking-widest text-zinc-500 uppercase">Verb to conjugate</span>
+                        <div class="space-y-1">
                             <h2 class="text-4xl md:text-5xl font-bold text-zinc-100">{exercise.verb}</h2>
                             <p class="text-yellow-200/80 font-medium italic">({exercise.translation})</p>
                         </div>
@@ -404,7 +403,7 @@
                                 bind:value={userAnswer}
                                 bind:this={inputEl}
                                 onkeydown={handleKeydown}
-                                placeholder="Type the conjugated form..."
+                                placeholder="Conjugation..."
                                 disabled={hasSubmitted}
                                 class="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-2xl px-6 py-4 focus:outline-none focus:border-yellow-200/50 transition-colors text-lg text-center"
                             >
@@ -416,19 +415,18 @@
                                     onclick={checkAnswer}
                                     disabled={!userAnswer.trim()}
                                 >
-                                    Submit Answer
+                                    Submit
                                 </button>
                             {:else}
                                 {#if isCorrect}
                                     <div class="w-full bg-green-500/10 border border-green-500/30 text-green-500 font-bold py-4 px-6 rounded-2xl text-center flex flex-col gap-1 animate-fadeIn">
-                                        <span>✓ Excellent!</span>
-                                        <span class="text-sm font-normal text-green-500/80">Added to your Vocabulary Flashcards.</span>
+                                        <span>✓ Correct</span>
                                     </div>
                                 {:else}
                                     <div class="w-full bg-red-500/10 border border-red-500/30 text-red-400 font-bold py-4 px-6 rounded-2xl text-center flex flex-col gap-2 animate-fadeIn">
-                                        <span>✗ Not quite right.</span>
+                                        <span>✗ Incorrect</span>
                                         <div class="text-sm font-normal flex flex-col">
-                                            <span class="text-zinc-400">Correct answer:</span>
+                                            <span class="text-xs text-zinc-400 uppercase tracking-wider">Answer</span>
                                             <span class="text-lg md:text-xl text-yellow-200 break-words">{exercise.answer}</span>
                                         </div>
                                     </div>
@@ -441,10 +439,7 @@
                 </div>
             {:else}
                 <div class="flex-1 flex items-center justify-center bg-zinc-900/20 rounded-3xl border border-dashed border-zinc-800 min-h-[400px]">
-                    <p class="text-zinc-500 flex flex-col items-center gap-2">
-                        <span class="text-4xl opacity-50">✨</span>
-                        <span>Click "New Exercise" to generate a random conjugation challenge.</span>
-                    </p>
+                    <p class="text-zinc-600 text-sm">Ready</p>
                 </div>
             {/if}
         </div>

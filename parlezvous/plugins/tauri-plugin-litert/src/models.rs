@@ -53,6 +53,7 @@ pub struct GenerateChatRequest {
   pub reset: bool,
   pub audio_base64: Option<String>,
   pub image_uri: Option<String>,
+  pub system_instruction: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]

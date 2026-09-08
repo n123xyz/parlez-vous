@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use sqlite_vec::sqlite3_vec_init;
 use tauri::Manager;
 
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct VocabId(pub i64);
@@ -251,7 +252,53 @@ pub const SCHEMA_V3: &str = "
     PRAGMA user_version = 3;
 ";
 
-const DB_VERSION_NUM: usize = 3;
+pub const SCHEMA_V4: &str = "
+    CREATE TABLE language_questions_queue (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        question_type TEXT NOT NULL,
+        question_data TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    PRAGMA user_version = 4;
+";
+
+pub const SCHEMA_V5: &str = "
+    CREATE TABLE coding_questions_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        question_type TEXT NOT NULL,
+        question_data TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE language_questions_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        question_type TEXT NOT NULL,
+        question_data TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    PRAGMA user_version = 5;
+";
+
+pub const SCHEMA_V6: &str = "
+    PRAGMA user_version = 6;
+";
+
+pub const SCHEMA_V7: &str = "
+    CREATE TABLE avatar_chat_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        role TEXT NOT NULL,
+        content TEXT NOT NULL,
+        correction TEXT,
+        audio_base64 TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    PRAGMA user_version = 7;
+";
+
+const DB_VERSION_NUM: usize = 7;
 
 pub fn init_db(app_handle: &tauri::AppHandle) -> Result<Connection, String> {
     let app_dir = app_handle
@@ -296,7 +343,7 @@ pub fn init_db(app_handle: &tauri::AppHandle) -> Result<Connection, String> {
         }
     }
 
-    let schemas = [SCHEMA_V1, SCHEMA_V2, SCHEMA_V3];
+    let schemas = [SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6, SCHEMA_V7];
 
     for i in 0..DB_VERSION_NUM {
         if user_version == i as i32 {
@@ -305,6 +352,7 @@ pub fn init_db(app_handle: &tauri::AppHandle) -> Result<Connection, String> {
             user_version = (i + 1) as i32;
         }
     }
+
 
     Ok(conn)
 }

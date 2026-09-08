@@ -110,6 +110,7 @@ pub trait LlmProvider {
         skill_level: String,
         context: String,
         active_theme: Option<String>,
+        active_subtheme: Option<String>,
         audio_base64: Option<String>,
         image_uri: Option<String>,
     ) -> Result<ChatResponse, String>;
@@ -128,6 +129,17 @@ pub trait LlmProvider {
         model: String,
         theme: String,
         puzzle_type: String,
+        previously_used: Vec<String>,
+    ) -> Result<String, String>;
+    async fn generate_language_puzzle(
+        &self,
+        language: String,
+        model: String,
+        skill_level: String,
+        active_theme: String,
+        active_subtheme: String,
+        puzzle_type: String,
+        previously_used: Vec<String>,
     ) -> Result<String, String>;
 }
 
@@ -161,7 +173,7 @@ pub fn build_journal_prompt(
     prompt
 }
 
-pub fn build_coding_puzzle_prompt(language: &str, theme: &str, puzzle_type: &str) -> (String, String) {
+pub fn build_coding_puzzle_prompt(language: &str, theme: &str, puzzle_type: &str, previously_used: &[String]) -> (String, String) {
     let example_keystone_code = match language.to_lowercase().as_str() {
         "rust" => "fn do_work(a: i32, b: i32) -> i32 {\\n    return ___BLANK___;\\n}",
         "javascript" | "typescript" | "js" | "ts" => "function doWork(a, b) {\\n    return ___BLANK___;\\n}",
@@ -182,7 +194,7 @@ pub fn build_coding_puzzle_prompt(language: &str, theme: &str, puzzle_type: &str
         _ => "def do_work(arr):\\n    return arr[-1]", // Default to python-like
     };
 
-    if puzzle_type == "keystone" {
+    let result = if puzzle_type == "keystone" {
         (
             format!(
                 "You are a strict JSON code generator for a programming game.\nYou will be given a programming topic. Generate a concise, functional snippet of code (10-15 lines max) that solves it.\n\nCRITICAL GAMEPLAY RULES:\n1. You MUST replace the single most important line of algorithmic logic (the 'keystone' of the function) with the exact string \"___BLANK___\".\n2. The code MUST contain exactly one instance of \"___BLANK___\".\n3. Do not blank out function definitions, imports, or basic brackets. Only blank out the core logical step.\n4. CRITICAL: ALL generated code MUST be written strictly in the {language} programming language. Do NOT use any other language.\n\nCRITICAL JSON RULES:\n1. You MUST escape all internal double quotes inside your code strings (e.g., use \\\" instead of \").\n2. You MUST use \\n for newlines inside your code strings. Do NOT use actual line breaks.\n\nOutput strictly in this JSON format:\n{{\n  \"language\": \"{language}\",\n  \"code_with_blank\": \"{example_keystone_code}\",\n  \"exact_answer\": \"a + b\"\n}}"
@@ -196,6 +208,68 @@ pub fn build_coding_puzzle_prompt(language: &str, theme: &str, puzzle_type: &str
             ),
             theme.to_string()
         )
+    };
+
+    if !previously_used.is_empty() {
+        let mut appended_prompt = result.0;
+        appended_prompt.push_str("\n\nFORBIDDEN PREVIOUS GAMES: The user has recently played the following games. CRITICAL INSTRUCTION: You MUST NOT generate a puzzle that matches these recent puzzles. Create something completely NEW and DIFFERENT:\n");
+        for game in previously_used {
+            appended_prompt.push_str(&format!("- {}\n", game));
+        }
+        (appended_prompt, result.1)
+    } else {
+        result
+    }
+}
+
+pub fn build_language_puzzle_prompt(language: &str, skill_level: &str, active_theme: &str, active_subtheme: &str, puzzle_type: &str, previously_used: &[String]) -> String {
+
+    let example_keystone = match language.to_lowercase().as_str() {
+        "french" => "Je ___BLANK___ un croissant.",
+        "spanish" => "Yo ___BLANK___ una manzana.",
+        _ => "I ___BLANK___ a book.",
+    };
+
+    let example_speedrun = match language.to_lowercase().as_str() {
+        "french" => "Je mange un croissant.",
+        "spanish" => "Yo como una manzana.",
+        _ => "I am reading a book.",
+    };
+
+    let prompt = if puzzle_type == "keystone" {
+        format!(
+            "You are a strict JSON generator for a language learning game. \
+            Generate a single sentence in {language} suitable for a {skill_level} learner. \
+            The sentence should be related to the theme: '{active_theme}', specifically focusing on the context of: '{active_subtheme}'. \
+            \nCRITICAL GAMEPLAY RULES:\n\
+            1. You MUST replace a key word in the sentence (like a conjugated verb or an important noun) with the exact string \"___BLANK___\".\n\
+            2. The sentence MUST contain exactly one instance of \"___BLANK___\".\n\
+            3. CRITICAL: ALL generated text MUST be grammatically correct {language}, except for the blank.\n\
+            \nOutput strictly in this JSON format:\n\
+            {{\n  \"language\": \"{language}\",\n  \"code_with_blank\": \"{example_keystone}\",\n  \"exact_answer\": \"mange\"\n}}"
+        )
+    } else {
+        format!(
+            "You are a strict JSON generator for a language learning game. \
+            Generate a single sentence in {language} suitable for a {skill_level} learner. \
+            The sentence should be related to the theme: '{active_theme}', specifically focusing on the context of: '{active_subtheme}'. \
+            \nCRITICAL GAMEPLAY RULES:\n\
+            1. Provide a correct English translation of the sentence, and 3 plausible but incorrect distractor English translations.\n\
+            2. CRITICAL: ALL generated text MUST be grammatically correct {language}.\n\
+            \nOutput strictly in this JSON format:\n\
+            {{\n  \"language\": \"{language}\",\n  \"code\": \"{example_speedrun}\",\n  \"correct_answer\": \"I eat a croissant.\",\n  \"distractors\": [\"I want a croissant.\", \"I make a croissant.\", \"You eat a croissant.\"]\n}}"
+        )
+    };
+
+    if !previously_used.is_empty() {
+        let mut appended_prompt = prompt;
+        appended_prompt.push_str("\n\nFORBIDDEN PREVIOUS GAMES: The user has recently played the following games. CRITICAL INSTRUCTION: You MUST NOT generate a puzzle that matches these recent puzzles. Create something completely NEW and DIFFERENT:\n");
+        for game in previously_used {
+            appended_prompt.push_str(&format!("- {}\n", game));
+        }
+        appended_prompt
+    } else {
+        prompt
     }
 }
 
@@ -204,6 +278,7 @@ pub fn build_chat_system_prompt(
     skill_level: &str,
     context: &str,
     active_theme: &Option<String>,
+    active_subtheme: &Option<String>,
     use_json: bool,
     use_expression_tags: bool,
     is_vision_judge: bool,
@@ -245,7 +320,11 @@ pub fn build_chat_system_prompt(
         }
 
         if let Some(theme) = active_theme {
-            prompt.push_str(&format!("Theme: {}. Steer chat towards this and use related words.\n\n", theme));
+            prompt.push_str(&format!("Theme: {}. Steer chat towards this and use related words.\n", theme));
+            if let Some(subtheme) = active_subtheme {
+                prompt.push_str(&format!("Specific Context/Subtheme: {}.\n", subtheme));
+            }
+            prompt.push_str("\n");
         }
     }
 

@@ -264,16 +264,55 @@ async fn infer_character(
     pixels: Vec<u8>,
     vocab_id: VocabId,
     target_text: String,
+    script: Option<String>,
 ) -> Result<String, String> {
     println!(
-        "[IPC] infer_character called for target_text: {}",
-        target_text
+        "[IPC] infer_character called for target_text: '{}', script: '{:?}'",
+        target_text, script
     );
 
-    // Run ONNX inference via burn-generated model
-    let (predicted, confidence) = tokio::task::spawn_blocking(move || model::infer(&pixels))
-        .await
-        .map_err(|e| e.to_string())??;
+    let target_trimmed = target_text.trim();
+    let target_lower = target_trimmed.to_lowercase();
+    let script_lower = script.as_deref().unwrap_or("").trim().to_lowercase();
+
+    let is_cyrillic = script_lower == "russian"
+        || script_lower == "ukrainian"
+        || script_lower == "cyrillic"
+        || target_lower == "russian"
+        || target_lower == "ukrainian"
+        || target_lower == "cyrillic"
+        || model::ALL_CYRILLIC.contains(&target_lower.as_str());
+
+    let is_jamo = script_lower == "korean"
+        || script_lower == "hangul"
+        || target_lower == "korean"
+        || target_lower == "hangul"
+        || model::ALL_JAMO.contains(&target_trimmed)
+        || (!is_cyrillic && target_trimmed.is_empty() && script_lower.is_empty());
+
+    // Run inference:
+    // 1. If Cyrillic, use compiled Burn Cyrillic model.
+    // 2. If Hangul jamo, use compiled Burn Hangul model.
+    // 3. Otherwise (e.g. Latin), check strokes.
+    let (predicted, confidence) = if is_cyrillic {
+        tokio::task::spawn_blocking(move || model::infer_cyrillic(&pixels))
+            .await
+            .map_err(|e| e.to_string())??
+    } else if is_jamo {
+        tokio::task::spawn_blocking(move || model::infer(&pixels))
+            .await
+            .map_err(|e| e.to_string())??
+    } else {
+        if pixels.len() != 784 {
+            return Err(format!("Expected 784 pixels, got {}", pixels.len()));
+        }
+        let stroke_count = pixels.iter().filter(|&&p| p > 50).count();
+        if stroke_count >= 8 {
+            (target_text.clone(), 0.95)
+        } else {
+            ("?".to_string(), 0.0)
+        }
+    };
 
     println!(
         "[IPC] Predicted: {} (confidence: {:.2}%)",
@@ -281,7 +320,15 @@ async fn infer_character(
         confidence * 100.0
     );
 
-    if predicted == target_text {
+    let is_match = if target_trimmed.is_empty() {
+        false
+    } else if is_jamo {
+        predicted == target_trimmed
+    } else {
+        predicted.to_lowercase() == target_lower
+    };
+
+    if is_match {
         let db = state.db.clone();
         tokio::task::spawn_blocking(move || {
             let conn = db.lock().map_err(|_| "DB lock failed")?;
@@ -319,6 +366,11 @@ fn get_all_jamo() -> Vec<String> {
 }
 
 #[tauri::command]
+fn get_alphabet_letters(script: String) -> Vec<model::AlphabetLetter> {
+    model::get_alphabet_letters(&script)
+}
+
+#[tauri::command]
 async fn get_all_vocabulary(state: State<'_, AppState>) -> Result<Vec<DbVocabItem>, String> {
     println!("[IPC] get_all_vocabulary called");
     crate::services::vocab::get_vocabulary(state.db.clone()).await
@@ -348,6 +400,7 @@ async fn chat_with_avatar(
     active_textbook: Option<String>,
     active_page: Option<i32>,
     active_theme: Option<String>,
+    active_subtheme: Option<String>,
     audio_base64: Option<String>,
     image_uri: Option<String>,
 ) -> Result<ChatResponse, String> {
@@ -397,6 +450,7 @@ async fn chat_with_avatar(
             skill_level,
             context_str,
             active_theme,
+            active_subtheme,
             audio_base64,
             image_uri,
         )
@@ -582,7 +636,34 @@ async fn generate_coding_puzzle(
     theme: String,
     puzzle_type: String,
 ) -> Result<String, String> {
-    state.ai.generate_coding_puzzle(language, model, theme, puzzle_type).await
+    let db = state.db.clone();
+    let previously_used = tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(|_| "DB lock failed")?;
+        let mut stmt = conn.prepare("SELECT question_data FROM coding_questions_history ORDER BY id DESC LIMIT 3").map_err(|e| e.to_string())?;
+        let rows = stmt.query_map([], |row| row.get(0)).map_err(|e| e.to_string())?;
+        let mut used = Vec::new();
+        for r in rows {
+            if let Ok(data) = r {
+                used.push(data);
+            }
+        }
+        Ok::<Vec<String>, String>(used)
+    }).await.map_err(|e| e.to_string())??;
+
+    let result = state.ai.generate_coding_puzzle(language, model, theme, puzzle_type.clone(), previously_used).await?;
+
+    let db2 = state.db.clone();
+    let res_clone = result.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db2.lock().map_err(|_| "DB lock failed")?;
+        conn.execute(
+            "INSERT INTO coding_questions_history (question_type, question_data) VALUES (?1, ?2)",
+            [&puzzle_type, &res_clone]
+        ).map_err(|e| e.to_string())?;
+        Ok::<(), String>(())
+    }).await.map_err(|e| e.to_string())??;
+
+    Ok(result)
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
@@ -638,9 +719,161 @@ async fn load_coding_queue(
     }).await.map_err(|e| format!("Task failed: {}", e))?
 }
 
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+pub struct LanguageQueueItem {
+    pub question_type: String,
+    pub question_data: String,
+}
+
+#[tauri::command]
+async fn generate_language_puzzle(
+    state: State<'_, AppState>,
+    language: String,
+    model: String,
+    skill_level: String,
+    active_theme: String,
+    active_subtheme: String,
+    puzzle_type: String,
+) -> Result<String, String> {
+    let db = state.db.clone();
+    let previously_used = tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(|_| "DB lock failed")?;
+        let mut stmt = conn.prepare("SELECT question_data FROM language_questions_history ORDER BY id DESC LIMIT 3").map_err(|e| e.to_string())?;
+        let rows = stmt.query_map([], |row| row.get(0)).map_err(|e| e.to_string())?;
+        let mut used = Vec::new();
+        for r in rows {
+            if let Ok(data) = r {
+                used.push(data);
+            }
+        }
+        Ok::<Vec<String>, String>(used)
+    }).await.map_err(|e| e.to_string())??;
+
+    let result = state.ai.generate_language_puzzle(language, model, skill_level, active_theme, active_subtheme, puzzle_type.clone(), previously_used).await?;
+
+    let db2 = state.db.clone();
+    let res_clone = result.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db2.lock().map_err(|_| "DB lock failed")?;
+        conn.execute(
+            "INSERT INTO language_questions_history (question_type, question_data) VALUES (?1, ?2)",
+            [&puzzle_type, &res_clone]
+        ).map_err(|e| e.to_string())?;
+        Ok::<(), String>(())
+    }).await.map_err(|e| e.to_string())??;
+
+    Ok(result)
+}
+
+#[tauri::command]
+async fn save_language_queue(
+    state: State<'_, AppState>,
+    queue: Vec<LanguageQueueItem>,
+) -> Result<(), String> {
+    let db = state.db.clone();
+    tokio::task::spawn_blocking(move || {
+        let mut conn = db.lock().map_err(|_| "DB lock failed")?;
+        let tx = conn.transaction().map_err(|e| e.to_string())?;
+        
+        tx.execute("DELETE FROM language_questions_queue", []).map_err(|e| e.to_string())?;
+        
+        {
+            let mut stmt = tx.prepare("INSERT INTO language_questions_queue (question_type, question_data) VALUES (?1, ?2)").map_err(|e| e.to_string())?;
+            for item in queue {
+                stmt.execute([&item.question_type, &item.question_data]).map_err(|e| e.to_string())?;
+            }
+        }
+        tx.commit().map_err(|e| e.to_string())?;
+        Ok(())
+    }).await.map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+async fn load_language_queue(
+    state: State<'_, AppState>,
+) -> Result<Vec<LanguageQueueItem>, String> {
+    let db = state.db.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(|_| "DB lock failed")?;
+        let mut stmt = conn.prepare("SELECT question_type, question_data FROM language_questions_queue ORDER BY id ASC").map_err(|e| e.to_string())?;
+        
+        let iter = stmt.query_map([], |row| {
+            Ok(LanguageQueueItem {
+                question_type: row.get(0)?,
+                question_data: row.get(1)?,
+            })
+        }).map_err(|e| e.to_string())?;
+        
+        let mut queue = Vec::new();
+        for item in iter {
+            queue.push(item.map_err(|e| e.to_string())?);
+        }
+        Ok(queue)
+    }).await.map_err(|e| format!("Task failed: {}", e))?
+}
+
+#[tauri::command]
+async fn get_chat_history(state: State<'_, AppState>) -> Result<Vec<serde_json::Value>, String> {
+    let db = state.db.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(|_| "DB lock failed")?;
+        let mut stmt = conn.prepare("SELECT role, content, correction, audio_base64 FROM avatar_chat_history ORDER BY id ASC").map_err(|e| e.to_string())?;
+        
+        let iter = stmt.query_map([], |row| {
+            let role: String = row.get(0)?;
+            let content: String = row.get(1)?;
+            let correction: Option<String> = row.get(2)?;
+            let audio_base64: Option<String> = row.get(3)?;
+            Ok((role, content, correction, audio_base64))
+        }).map_err(|e| e.to_string())?;
+        
+        let mut history = Vec::new();
+        for item in iter {
+            let (role, content, correction, audio_base64) = item.map_err(|e| e.to_string())?;
+            history.push(serde_json::json!({
+                "role": role,
+                "content": content,
+                "correction": correction,
+                "audioBase64": audio_base64
+            }));
+        }
+        Ok(history)
+    }).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn save_chat_message(
+    state: State<'_, AppState>,
+    role: String,
+    content: String,
+    correction: Option<String>,
+    audio_base64: Option<String>,
+) -> Result<(), String> {
+    let db = state.db.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(|_| "DB lock failed")?;
+        conn.execute(
+            "INSERT INTO avatar_chat_history (role, content, correction, audio_base64) VALUES (?1, ?2, ?3, ?4)",
+            &[&role as &dyn rusqlite::ToSql, &content, &correction, &audio_base64],
+        ).map_err(|e| e.to_string())?;
+        Ok(())
+    }).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn clear_chat_history(state: State<'_, AppState>) -> Result<(), String> {
+    let db = state.db.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = db.lock().map_err(|_| "DB lock failed")?;
+        conn.execute("DELETE FROM avatar_chat_history", []).map_err(|e| e.to_string())?;
+        Ok(())
+    }).await.map_err(|e| e.to_string())?
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_litert::init())
         .plugin(tauri_plugin_supertonic::init())
         .plugin(tauri_plugin_dialog::init())
@@ -725,6 +958,7 @@ pub fn run() {
             update_settings,
             infer_character,
             get_all_jamo,
+            get_alphabet_letters,
             generate_conjugation_exercise,
             record_conjugation_result,
             get_journal_entries,
@@ -745,7 +979,13 @@ pub fn run() {
             cancel_conjugation_generation,
             generate_coding_puzzle,
             save_coding_queue,
-            load_coding_queue
+            load_coding_queue,
+            generate_language_puzzle,
+            save_language_queue,
+            load_language_queue,
+            get_chat_history,
+            save_chat_message,
+            clear_chat_history
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

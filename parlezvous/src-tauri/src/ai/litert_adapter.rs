@@ -131,6 +131,12 @@ impl LiteRtAdapter {
         prompt: String,
         error_prefix: &str,
     ) -> Result<T, String> {
+        // Clear chat history memory so returning to chat doesn't hallucinate a continuation
+        // on top of this single-shot conversation
+        if let Ok(mut last_hist_guard) = self.last_history.lock() {
+            *last_hist_guard = None;
+        }
+
         let max_attempts = 3;
         let mut attempts = 0;
 
@@ -138,7 +144,7 @@ impl LiteRtAdapter {
         let gemma_prompt = format!("<start_of_turn>user\n{}<end_of_turn>\n<start_of_turn>model\n", prompt);
 
         while attempts < max_attempts {
-            let payload = tauri_plugin_litert::GenerateChatRequest { prompt: gemma_prompt.clone(), reset: true, audio_base64: None, image_uri: None };
+            let payload = tauri_plugin_litert::GenerateChatRequest { prompt: gemma_prompt.clone(), reset: true, audio_base64: None, image_uri: None, system_instruction: None };
             
             let response = match self.app_handle.litert().generate_chat(payload) {
                 Ok(res) => res.response,
@@ -232,6 +238,7 @@ impl LlmProvider for LiteRtAdapter {
         skill_level: String,
         context: String,
         active_theme: Option<String>,
+        active_subtheme: Option<String>,
         audio_base64: Option<String>,
         image_uri: Option<String>,
     ) -> Result<ChatResponse, String> {
@@ -241,6 +248,7 @@ impl LlmProvider for LiteRtAdapter {
             &skill_level,
             &context,
             &active_theme,
+            &active_subtheme,
             false,
             true, // use_expression_tags
             image_uri.is_some(),
@@ -278,7 +286,7 @@ impl LlmProvider for LiteRtAdapter {
             summary_prompt.push_str("\n\nSummary:");
             
             let gemma_summary_prompt = format!("<start_of_turn>user\n{}<end_of_turn>\n<start_of_turn>model\n", summary_prompt);
-            let payload = tauri_plugin_litert::GenerateChatRequest { prompt: gemma_summary_prompt, reset: true, audio_base64: None, image_uri: None };
+            let payload = tauri_plugin_litert::GenerateChatRequest { prompt: gemma_summary_prompt, reset: true, audio_base64: None, image_uri: None, system_instruction: None };
             
             let summary_text = match self.app_handle.litert().generate_chat(payload) {
                 Ok(res) => res.response.trim().to_string(),
@@ -326,6 +334,7 @@ impl LlmProvider for LiteRtAdapter {
         }
 
         let is_multimodal = audio_base64.is_some() || image_uri.is_some();
+        let mut multimodal_system_instruction: Option<String> = None;
         let gemma_prompt = if is_multimodal {
             // MULTIMODAL: Do not wrap in <start_of_turn>. Let Kotlin/LiteRT handle it natively.
             let mut text = truncated_history.last().unwrap_or(history.last().unwrap()).content.clone();
@@ -343,13 +352,20 @@ impl LlmProvider for LiteRtAdapter {
             
             if !is_continuation {
                 let mut system_notes = String::new();
-                for msg in &truncated_history {
+                for (i, msg) in truncated_history.iter().enumerate() {
+                    if i == truncated_history.len().saturating_sub(1) {
+                        continue; // Skip the last message, handled as `text` below
+                    }
                     if msg.role == "system" {
                         system_notes.push_str(&msg.content);
                         system_notes.push_str("\n\n");
+                    } else {
+                        let role_name = if msg.role == "assistant" || msg.role == "model" { "Assistant" } else { "User" };
+                        system_notes.push_str(&format!("[{}'s previous message: \"{}\"]\n\n", role_name, msg.content));
                     }
                 }
-                format!("{}\n\n{}{}", system_prompt_str, system_notes, text)
+                multimodal_system_instruction = Some(format!("{}\n\n{}", system_prompt_str, system_notes));
+                text
             } else {
                 text
             }
@@ -398,6 +414,7 @@ impl LlmProvider for LiteRtAdapter {
                 reset: !is_continuation,
                 audio_base64: audio_base64.clone(),
                 image_uri: image_uri.clone(),
+                system_instruction: multimodal_system_instruction.clone(),
             };
             
             let response_text = match self.app_handle.litert().generate_chat(payload) {
@@ -452,9 +469,10 @@ impl LlmProvider for LiteRtAdapter {
         _model: String,
         theme: String,
         puzzle_type: String,
+        previously_used: Vec<String>,
     ) -> Result<String, String> {
         self.ensure_initialized().await?;
-        let (system_prompt, user_prompt) = super::build_coding_puzzle_prompt(&language, &theme, &puzzle_type);
+        let (system_prompt, user_prompt) = super::build_coding_puzzle_prompt(&language, &theme, &puzzle_type, &previously_used);
         let prompt = format!("{}\n{}", system_prompt, user_prompt);
         let max_attempts = 3;
         let mut attempts = 0;
@@ -498,5 +516,60 @@ impl LlmProvider for LiteRtAdapter {
             return Ok(json_value.to_string());
         }
         Err("Failed to generate coding puzzle".to_string())
+    }
+
+    async fn generate_language_puzzle(
+        &self,
+        language: String,
+        _model: String,
+        skill_level: String,
+        active_theme: String,
+        active_subtheme: String,
+        puzzle_type: String,
+        previously_used: Vec<String>,
+    ) -> Result<String, String> {
+        self.ensure_initialized().await?;
+        let system_prompt = super::build_language_puzzle_prompt(&language, &skill_level, &active_theme, &active_subtheme, &puzzle_type, &previously_used);
+        let user_prompt = format!("Generate a {} puzzle.", puzzle_type);
+        let prompt = format!("{}\n{}", system_prompt, user_prompt);
+        let max_attempts = 3;
+        let mut attempts = 0;
+        
+        while attempts < max_attempts {
+            let mut json_value: serde_json::Value = match self.execute_json_generation(prompt.clone(), "Language Puzzle") {
+                Ok(v) => v,
+                Err(e) => {
+                    attempts += 1;
+                    if attempts >= max_attempts { return Err(e); }
+                    continue;
+                }
+            };
+            
+            if puzzle_type == "keystone" {
+                if let Some(code) = json_value.get("code_with_blank").and_then(|v| v.as_str()) {
+                    if !code.contains("___BLANK___") {
+                        let mut recovered = false;
+                        if let Some(exact) = json_value.get("exact_answer").and_then(|v| v.as_str()) {
+                            if !exact.trim().is_empty() && code.contains(exact) {
+                                let new_code = code.replacen(exact, "___BLANK___", 1);
+                                if let Some(obj) = json_value.as_object_mut() {
+                                    obj.insert("code_with_blank".to_string(), serde_json::Value::String(new_code));
+                                    recovered = true;
+                                }
+                            }
+                        }
+                        if !recovered {
+                            attempts += 1;
+                            if attempts >= max_attempts {
+                                return Err(format!("The AI model failed to include ___BLANK___ after {} attempts.", max_attempts));
+                            }
+                            continue;
+                        }
+                    }
+                }
+            }
+            return Ok(json_value.to_string());
+        }
+        Err("Failed to generate language puzzle".to_string())
     }
 }

@@ -20,5 +20,14 @@ fn main() {
         .out_dir(model_out.to_str().unwrap())
         .run_from_script();
 
+    let cyrillic_path = PathBuf::from(&manifest_dir).join("models").join("cyrillic_model.onnx");
+    println!("cargo:rerun-if-changed={}", cyrillic_path.display());
+    if cyrillic_path.exists() {
+        ModelGen::new()
+            .input(cyrillic_path.to_str().unwrap())
+            .out_dir(model_out.to_str().unwrap())
+            .run_from_script();
+    }
+
     tauri_build::build()
 }

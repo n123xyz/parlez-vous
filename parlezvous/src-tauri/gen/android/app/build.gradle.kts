@@ -18,7 +18,7 @@ android {
     namespace = "com.user.parlezvous"
     defaultConfig {
         manifestPlaceholders["usesCleartextTraffic"] = "false"
-        applicationId = "com.user.parlezvous"
+        applicationId = "com.parlezvous.parlezvous"
         minSdk = 24
         targetSdk = 36
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()

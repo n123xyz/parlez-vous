@@ -29,18 +29,18 @@
     <div class="flex items-center justify-between border-b border-zinc-800 pb-4">
         <div>
             <h1 class="text-3xl font-bold text-yellow-200">Vocabulary</h1>
-            <p class="text-zinc-400 mt-2">Review the vocabulary extracted from your journal entries.</p>
+            <p class="text-xs text-zinc-500 mt-1">{settingsState.targetLanguage}</p>
         </div>
-        <div class="bg-zinc-900 border border-zinc-800 px-6 py-3 rounded-2xl flex items-center gap-3">
-            <span class="text-zinc-400 font-bold uppercase tracking-widest text-xs">Total Words</span>
+        <div class="bg-zinc-900 border border-zinc-800 px-5 py-2.5 rounded-2xl flex items-center gap-3">
+            <span class="text-zinc-500 font-bold uppercase tracking-widest text-xs">Total</span>
             <span class="text-2xl font-bold text-zinc-100">{vocabulary.length}</span>
         </div>
     </div>
 
     {#if isLoading}
         <div class="flex-1 flex flex-col items-center justify-center gap-4">
-            <div class="w-12 h-12 border-4 border-yellow-200 border-t-transparent rounded-full animate-spin"></div>
-            <p class="text-zinc-500 font-bold tracking-widest uppercase text-sm">Loading Vocabulary...</p>
+            <div class="w-10 h-10 border-4 border-yellow-200 border-t-transparent rounded-full animate-spin"></div>
+            <p class="text-zinc-500 text-sm">Loading...</p>
         </div>
     {:else if vocabulary.length === 0}
         <div class="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-zinc-800 rounded-3xl p-12 bg-zinc-900/50">
@@ -48,8 +48,8 @@
                 <span class="text-2xl text-zinc-600">?</span>
             </div>
             <h2 class="text-xl font-bold text-zinc-300 mb-2">No vocabulary yet</h2>
-            <p class="text-zinc-500 text-center max-w-md">
-                Head over to the <a href="/journal" class="text-yellow-200 hover:underline">Journal</a> tab and create your first entry to automatically generate vocabulary cards!
+            <p class="text-zinc-500 text-center text-sm">
+                Practice in <a href="/journal" class="text-yellow-200 hover:underline">Journal</a> to build flashcards.
             </p>
         </div>
     {:else}

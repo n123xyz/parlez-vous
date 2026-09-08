@@ -49,19 +49,29 @@ export function sanitizeTTSInput(text: string): string {
     return sanitized;
 }
 
-// Split text into chunks using the native browser Intl API.
-// Produces paired segments: 2 sentences per chunk, or 2 graphemes
-// per chunk for languages where sentence segmentation yields no splits.
-export function chunkSentences(text: string, locale: string = 'fr'): string[] {
+export function chunkSentences(text: string, locale: string = 'en'): string[] {
     if (!text.trim()) return [];
 
-    // Try sentence-level segmentation first
-    const sentenceSegmenter = new Intl.Segmenter(locale, { granularity: 'sentence' });
-    const sentences = Array.from(sentenceSegmenter.segment(text))
-        .map(s => s.segment.trim())
-        .filter(s => s.length > 0);
+    // Only pass locale to Segmenter if it's a valid BCP-47 tag format (e.g., 'en', 'pt-BR')
+    // Otherwise, pass undefined to use the system's default locale.
+    const isValidBcp47 = /^[a-z]{2,3}(-[a-zA-Z0-9]+)*$/i.test(locale);
+    const segmenterLocale = isValidBcp47 ? locale : undefined;
 
-    return pairSegments(sentences);
+    try {
+        const sentenceSegmenter = new Intl.Segmenter(segmenterLocale, { granularity: 'sentence' });
+        const sentences = Array.from(sentenceSegmenter.segment(text))
+            .map(s => s.segment.trim())
+            .filter(s => s.length > 0);
+
+        return pairSegments(sentences);
+    } catch (e) {
+        console.warn(`Intl.Segmenter failed for locale '${segmenterLocale}', falling back to 'en'`, e);
+        const sentenceSegmenter = new Intl.Segmenter('en', { granularity: 'sentence' });
+        const sentences = Array.from(sentenceSegmenter.segment(text))
+            .map(s => s.segment.trim())
+            .filter(s => s.length > 0);
+        return pairSegments(sentences);
+    }
 }
 
 function pairSegments(segments: string[]): string[] {
@@ -79,7 +89,7 @@ export async function playTTS(
     text: string,
     ttsServerUrl: string,
     onAnim?: (animCode: string, delayMs: number) => void,
-    locale: string = 'fr'
+    targetLang: string = 'en'
 ) {
     if (!ttsAudioContext) initTTSAudio();
 
@@ -94,7 +104,7 @@ export async function playTTS(
     const textWithAnchors = sanitized.replace(animRegex, '|||ANIM_$1|||');
 
     // 2. Chunk the text. The anchors safely ride along inside their specific chunk!
-    const chunks = chunkSentences(textWithAnchors, locale);
+    const chunks = chunkSentences(textWithAnchors, targetLang);
 
     // Process chunks sequentially
     for (const chunk of chunks) {
@@ -118,7 +128,7 @@ export async function playTTS(
             // Offload TTS request to Rust backend via the generate_tts_audio command
             const rawAudioBytes: number[] = await invoke('generate_tts_audio', {
                 text: cleanChunk,
-                language: locale,
+                language: targetLang,
                 voice: 'sohee', // The backend will ignore this for Supertonic and use F1.json
                 speed: ttsPlaybackRate,
                 url: ttsServerUrl
@@ -170,10 +180,25 @@ export async function playTTS(
     }
 }
 
+export function normalizeSupertonicLocale(langStr: string): string {
+    const langMap: Record<string, string> = {
+        english: 'en', korean: 'ko', japanese: 'ja', arabic: 'ar',
+        bulgarian: 'bg', czech: 'cs', danish: 'da', german: 'de',
+        greek: 'el', spanish: 'es', estonian: 'et', finnish: 'fi',
+        french: 'fr', hindi: 'hi', croatian: 'hr', hungarian: 'hu',
+        indonesian: 'id', italian: 'it', lithuanian: 'lt', latvian: 'lv',
+        dutch: 'nl', polish: 'pl', portuguese: 'pt', romanian: 'ro',
+        russian: 'ru', slovak: 'sk', slovenian: 'sl', swedish: 'sv',
+        turkish: 'tr', ukrainian: 'uk', vietnamese: 'vi'
+    };
+    const cleanLocale = langStr.trim().toLowerCase();
+    return langMap[cleanLocale] || cleanLocale;
+}
+
 export async function playSupertonicTTS(
     text: string,
     onAnim?: (animCode: string, delayMs: number) => void,
-    locale: string = 'fr'
+    targetLang: string = 'en'
 ) {
     if (!ttsAudioContext) initTTSAudio();
 
@@ -184,7 +209,10 @@ export async function playSupertonicTTS(
     const sanitized = sanitizeTTSInput(text);
     const animRegex = /[<\[]anim:([a-zA-Z0-9_-]+)[>\]]/g;
     const textWithAnchors = sanitized.replace(animRegex, '|||ANIM_$1|||');
-    const chunks = chunkSentences(textWithAnchors, locale);
+    
+    // Normalize to BCP-47 only for the segmenter, so it doesn't crash on full names
+    const bcp47Locale = normalizeSupertonicLocale(targetLang);
+    const chunks = chunkSentences(textWithAnchors, bcp47Locale);
 
     // Tauri invoke is dynamic to avoid breaking non-Tauri web builds
     let invoke: any;
@@ -217,7 +245,7 @@ export async function playSupertonicTTS(
         try {
             const response = await invoke('generate_supertonic_tts', {
                 text: cleanChunk,
-                lang: locale,
+                lang: targetLang,
                 speed: ttsPlaybackRate,
                 steps: 6
             }) as { audioBytes: number[]; sampleRate: number };
@@ -279,12 +307,12 @@ export async function playSmartTTS(
     text: string,
     ttsServerUrl: string,
     onAnim?: (animCode: string, delayMs: number) => void,
-    locale: string = 'fr'
+    targetLang: string = 'en'
 ) {
     const isAndroidTauri = (window as any).__TAURI_INTERNALS__ && navigator.userAgent.toLowerCase().includes('android');
     if (isAndroidTauri) {
-        await playSupertonicTTS(text, onAnim, locale);
+        await playSupertonicTTS(text, onAnim, targetLang);
     } else {
-        await playTTS(text, ttsServerUrl, onAnim, locale);
+        await playTTS(text, ttsServerUrl, onAnim, targetLang);
     }
 }

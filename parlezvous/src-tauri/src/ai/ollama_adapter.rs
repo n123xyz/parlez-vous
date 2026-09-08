@@ -164,6 +164,7 @@ impl LlmProvider for OllamaAdapter {
         skill_level: String,
         context: String,
         active_theme: Option<String>,
+        active_subtheme: Option<String>,
         _audio_base64: Option<String>,
         _image_uri: Option<String>,
     ) -> Result<ChatResponse, String> {
@@ -173,6 +174,7 @@ impl LlmProvider for OllamaAdapter {
             &skill_level,
             &context,
             &active_theme,
+            &active_subtheme,
             !is_vision,
             false,
             is_vision,
@@ -259,7 +261,7 @@ impl LlmProvider for OllamaAdapter {
                     if gen_attempts >= max_gen_attempts {
                         return Err(format!(
                             "The AI model failed to produce valid JSON after {} attempts.",
-                            max_gen_attempts
+                            gen_attempts
                         ));
                     }
                 }
@@ -382,7 +384,7 @@ impl LlmProvider for OllamaAdapter {
                     if attempts >= max_attempts {
                         return Err(format!(
                             "The AI model failed to generate embeddings after {} attempts.",
-                            max_attempts
+                            attempts
                         ));
                     }
                 }
@@ -398,8 +400,9 @@ impl LlmProvider for OllamaAdapter {
         model: String,
         theme: String,
         puzzle_type: String,
+        previously_used: Vec<String>,
     ) -> Result<String, String> {
-        let (system_prompt, user_prompt) = super::build_coding_puzzle_prompt(&language, &theme, &puzzle_type);
+        let (system_prompt, user_prompt) = super::build_coding_puzzle_prompt(&language, &theme, &puzzle_type, &previously_used);
         let max_attempts = 3;
         let mut attempts = 0;
 
@@ -486,6 +489,91 @@ impl LlmProvider for OllamaAdapter {
             }
         }
         Err("Failed to generate coding puzzle".to_string())
+    }
+
+    async fn generate_language_puzzle(
+        &self,
+        language: String,
+        model: String,
+        skill_level: String,
+        active_theme: String,
+        active_subtheme: String,
+        puzzle_type: String,
+        previously_used: Vec<String>,
+    ) -> Result<String, String> {
+        let prompt = super::build_language_puzzle_prompt(&language, &skill_level, &active_theme, &active_subtheme, &puzzle_type, &previously_used);
+        let user_prompt = format!("Generate a {} puzzle.", puzzle_type);
+        let max_attempts = 3;
+        let mut attempts = 0;
+
+        let messages = vec![
+            OllamaChatMessage::system(prompt.clone()),
+            OllamaChatMessage::user(user_prompt.clone()),
+        ];
+
+        while attempts < max_attempts {
+            println!("[generate_language_puzzle] Attempt {}/{} starting.", attempts + 1, max_attempts);
+            let options = ModelOptions::default().num_predict(4096);
+            let request = ollama_rs::generation::chat::request::ChatMessageRequest::new(model.clone(), messages.clone()).options(options);
+            
+            let client = self.get_client()?;
+            let response = tokio::time::timeout(std::time::Duration::from_secs(45), client.send_chat_messages(request))
+                .await
+                .map_err(|_| "Ollama generation timed out after 45 seconds.".to_string())?
+                .map_err(|e| e.to_string())?;
+            
+            let mut content = response.message.content;
+
+            while let (Some(start), Some(end)) = (content.find("<think>"), content.find("</think>")) {
+                if start < end {
+                    let mut new_content = content[..start].to_string();
+                    new_content.push_str(&content[end + "</think>".len()..]);
+                    content = new_content;
+                } else {
+                    break;
+                }
+            }
+
+            let json_content = if let (Some(start), Some(end)) = (content.find('{'), content.rfind('}')) {
+                &content[start..=end]
+            } else {
+                &content
+            };
+            
+            match serde_json::from_str::<serde_json::Value>(json_content) {
+                Ok(mut value) => {
+                    if puzzle_type == "keystone" {
+                        if let Some(code) = value.get("code_with_blank").and_then(|v| v.as_str()) {
+                            if !code.contains("___BLANK___") {
+                                let mut recovered = false;
+                                if let Some(exact) = value.get("exact_answer").and_then(|v| v.as_str()) {
+                                    if !exact.trim().is_empty() && code.contains(exact) {
+                                        let new_code = code.replacen(exact, "___BLANK___", 1);
+                                        if let Some(obj) = value.as_object_mut() {
+                                            obj.insert("code_with_blank".to_string(), serde_json::Value::String(new_code));
+                                            recovered = true;
+                                        }
+                                    }
+                                }
+                                if !recovered {
+                                    attempts += 1;
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+                    return Ok(value.to_string());
+                }
+                Err(err) => {
+                    attempts += 1;
+                    println!("LLM Language JSON Parse Error on attempt {}: {}", attempts, err);
+                    if attempts >= max_attempts {
+                        return Err(format!("The AI model failed to produce valid JSON after {} attempts.", max_attempts));
+                    }
+                }
+            }
+        }
+        Err("Failed to generate language puzzle".to_string())
     }
 }
 

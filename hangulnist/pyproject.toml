@@ -9,6 +9,7 @@ dependencies = [
     "onnx>=1.21.0",
     "onnxscript>=0.7.0",
     "pillow>=12.2.0",
+    "pandas>=2.0.0",
     "torch>=2.11.0",
     "torchvision>=0.26.0",
 ]

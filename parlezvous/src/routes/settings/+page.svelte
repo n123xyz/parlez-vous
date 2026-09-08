@@ -5,6 +5,14 @@
     import toast from 'svelte-french-toast';
     import { invoke } from '@tauri-apps/api/core';
     import { getThemes } from '$lib/coding/utils';
+    import { 
+        notificationState, 
+        loadNotificationSettings, 
+        saveNotificationSettings, 
+        requestNotificationPermission, 
+        sendTestNotification 
+    } from '$lib/services/notifications.svelte.ts';
+    import { Bell, BellRing, BookOpen, Flame, Coffee, Moon, Sparkles, Volume2 } from 'lucide-svelte';
 
     import { listen } from '@tauri-apps/api/event';
 
@@ -137,6 +145,7 @@
     onMount(() => {
         isAndroidTauri = (window as any).__TAURI_INTERNALS__ && navigator.userAgent.toLowerCase().includes('android');
         
+        loadNotificationSettings();
         loadSettings().then(() => {
             fetchOllamaModels();
             checkLitertModel();
@@ -219,8 +228,7 @@
     <div class="bg-zinc-900 p-8 rounded-2xl border border-zinc-800 shadow-xl space-y-8">
         {#if !isAndroidTauri || showAdvancedMobile}
         <div>
-            <h3 class="text-xl font-medium text-zinc-200 mb-2">Local LLM Configuration</h3>
-            <p class="text-zinc-400 text-sm mb-6">Select the Ollama model to power Parlez-Vous. A capable instruct model like Gemma or Llama is recommended.</p>
+            <h3 class="text-xl font-medium text-zinc-200 mb-4">Local LLM Configuration</h3>
             
             {#if ollamaState.models.length === 0}
                 <div class="bg-zinc-800 p-4 rounded-xl border border-zinc-700 flex items-center justify-between mb-4">
@@ -408,8 +416,7 @@
         {/if}
 
         <div>
-            <h3 class="text-xl font-medium text-zinc-200 mb-2">Application Preferences</h3>
-            <p class="text-zinc-400 text-sm mb-6">Configure target language and TTS integration.</p>
+            <h3 class="text-xl font-medium text-zinc-200 mb-4">Application Preferences</h3>
 
             <div class="flex flex-col gap-4">
                 <div class="flex flex-col gap-2">
@@ -625,6 +632,193 @@
             >
                 {isSaving ? 'Saving...' : 'Save Preferences'}
             </button>
+        </div>
+
+        <!-- Notifications & Study Reminders Hub (Zero-AI / Low Overhead) -->
+        <div class="bg-gradient-to-br from-zinc-900 via-zinc-900 to-yellow-950/20 border border-yellow-500/30 rounded-3xl p-5 md:p-6 shadow-xl space-y-5">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-800/80 pb-4">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-2xl bg-yellow-200/10 text-yellow-200 border border-yellow-200/20 flex items-center justify-center text-xl shadow-[0_0_15px_rgba(253,253,150,0.15)]">
+                        <BellRing class="w-5 h-5" />
+                    </div>
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <h3 class="text-base md:text-lg font-bold text-zinc-100">Notifications & Study Reminders</h3>
+                            <span class="text-[10px] px-2 py-0.5 rounded-full font-bold bg-yellow-200/20 text-yellow-200 border border-yellow-200/30 uppercase tracking-wider">
+                                Zero-AI Engine
+                            </span>
+                        </div>
+                        <span class="text-xs text-zinc-400">Deterministic rule-based reminders for SRS reviews, streaks, and study breaks without model memory overhead.</span>
+                    </div>
+                </div>
+
+                <!-- Master Alert Toggle -->
+                <label class="relative inline-flex items-center cursor-pointer shrink-0">
+                    <input 
+                        type="checkbox" 
+                        bind:checked={notificationState.settings.enabled} 
+                        onchange={() => saveNotificationSettings(notificationState.settings)}
+                        class="sr-only peer" 
+                    />
+                    <div class="w-12 h-6 bg-zinc-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-yellow-400 shadow-inner"></div>
+                </label>
+            </div>
+
+            <!-- OS Notification Permission Status & Action Strip -->
+            <div class="bg-zinc-950/80 rounded-2xl p-4 border border-zinc-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div class="flex items-center gap-3">
+                    <div class="w-8 h-8 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-sm font-bold text-yellow-200">
+                        🔔
+                    </div>
+                    <div>
+                        <span class="text-xs font-bold text-zinc-200 block">System Notification Status</span>
+                        <span class="text-[11px] text-zinc-400">
+                            Current Permission: 
+                            <strong class="font-mono {notificationState.permission === 'granted' ? 'text-green-400' : notificationState.permission === 'denied' ? 'text-red-400' : 'text-yellow-400'}">
+                                {notificationState.permission.toUpperCase()}
+                            </strong>
+                        </span>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-2">
+                    {#if notificationState.permission !== 'granted'}
+                        <button
+                            type="button"
+                            onclick={requestNotificationPermission}
+                            class="px-3.5 py-1.5 rounded-xl bg-yellow-200/20 hover:bg-yellow-200/30 text-yellow-200 border border-yellow-200/40 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
+                        >
+                            <Bell class="w-3.5 h-3.5" />
+                            <span>Enable System Permissions</span>
+                        </button>
+                    {/if}
+
+                    <button
+                        type="button"
+                        onclick={sendTestNotification}
+                        class="px-3.5 py-1.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-200 border border-zinc-700 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+                    >
+                        <span>✨ Send Test Alert</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Granular Category Toggles Grid -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                <!-- 1. SRS Flashcard Reviews -->
+                <label class="bg-zinc-950/70 p-3.5 rounded-2xl border border-zinc-800/80 hover:border-zinc-700 flex items-start justify-between gap-3 cursor-pointer transition-colors">
+                    <div class="space-y-0.5">
+                        <span class="text-xs font-bold text-zinc-200 flex items-center gap-1.5">
+                            <span>📚</span> SRS Flashcards
+                        </span>
+                        <p class="text-[11px] text-zinc-400 leading-snug">Spaced repetition review alerts when vocabulary cards are ready.</p>
+                    </div>
+                    <input
+                        type="checkbox"
+                        bind:checked={notificationState.settings.srs_reviews}
+                        onchange={() => saveNotificationSettings(notificationState.settings)}
+                        class="mt-1 accent-yellow-400 rounded cursor-pointer w-4 h-4"
+                    />
+                </label>
+
+                <!-- 2. Daily Study Streak -->
+                <label class="bg-zinc-950/70 p-3.5 rounded-2xl border border-zinc-800/80 hover:border-zinc-700 flex items-start justify-between gap-3 cursor-pointer transition-colors">
+                    <div class="space-y-0.5">
+                        <span class="text-xs font-bold text-zinc-200 flex items-center gap-1.5">
+                            <span>🔥</span> Daily Streak
+                        </span>
+                        <p class="text-[11px] text-zinc-400 leading-snug">Afternoon reminder to practice and keep your daily momentum alive.</p>
+                    </div>
+                    <input
+                        type="checkbox"
+                        bind:checked={notificationState.settings.daily_streak_reminder}
+                        onchange={() => saveNotificationSettings(notificationState.settings)}
+                        class="mt-1 accent-yellow-400 rounded cursor-pointer w-4 h-4"
+                    />
+                </label>
+
+                <!-- 3. Study Session Breaks -->
+                <label class="bg-zinc-950/70 p-3.5 rounded-2xl border border-zinc-800/80 hover:border-zinc-700 flex items-start justify-between gap-3 cursor-pointer transition-colors">
+                    <div class="space-y-0.5">
+                        <span class="text-xs font-bold text-zinc-200 flex items-center gap-1.5">
+                            <span>☕</span> Study Breaks
+                        </span>
+                        <p class="text-[11px] text-zinc-400 leading-snug">Focus fatigue alerts after 30 minutes of continuous active study.</p>
+                    </div>
+                    <input
+                        type="checkbox"
+                        bind:checked={notificationState.settings.study_break_alerts}
+                        onchange={() => saveNotificationSettings(notificationState.settings)}
+                        class="mt-1 accent-yellow-400 rounded cursor-pointer w-4 h-4"
+                    />
+                </label>
+
+                <!-- 4. Evening Memory Consolidation -->
+                <label class="bg-zinc-950/70 p-3.5 rounded-2xl border border-zinc-800/80 hover:border-zinc-700 flex items-start justify-between gap-3 cursor-pointer transition-colors">
+                    <div class="space-y-0.5">
+                        <span class="text-xs font-bold text-zinc-200 flex items-center gap-1.5">
+                            <span>🌙</span> Evening Consolidation
+                        </span>
+                        <p class="text-[11px] text-zinc-400 leading-snug">Evening reminder before bed to review vocabulary for memory retention.</p>
+                    </div>
+                    <input
+                        type="checkbox"
+                        bind:checked={notificationState.settings.evening_winddown}
+                        onchange={() => saveNotificationSettings(notificationState.settings)}
+                        class="mt-1 accent-yellow-400 rounded cursor-pointer w-4 h-4"
+                    />
+                </label>
+
+                <!-- 5. Milestones & Achievements -->
+                <label class="bg-zinc-950/70 p-3.5 rounded-2xl border border-zinc-800/80 hover:border-zinc-700 flex items-start justify-between gap-3 cursor-pointer transition-colors">
+                    <div class="space-y-0.5">
+                        <span class="text-xs font-bold text-zinc-200 flex items-center gap-1.5">
+                            <span>🏆</span> Milestones & Tiers
+                        </span>
+                        <p class="text-[11px] text-zinc-400 leading-snug">Celebrations when unlocking new curriculum tiers or XP goals.</p>
+                    </div>
+                    <input
+                        type="checkbox"
+                        bind:checked={notificationState.settings.milestone_alerts}
+                        onchange={() => saveNotificationSettings(notificationState.settings)}
+                        class="mt-1 accent-yellow-400 rounded cursor-pointer w-4 h-4"
+                    />
+                </label>
+
+                <!-- 6. Melodic Audio Chime -->
+                <label class="bg-zinc-950/70 p-3.5 rounded-2xl border border-zinc-800/80 hover:border-zinc-700 flex items-start justify-between gap-3 cursor-pointer transition-colors">
+                    <div class="space-y-0.5">
+                        <span class="text-xs font-bold text-zinc-200 flex items-center gap-1.5">
+                            <span>🔔</span> Melodic Chime
+                        </span>
+                        <p class="text-[11px] text-zinc-400 leading-snug">Play pleasant Web Audio harmonic arpeggio on alerts.</p>
+                    </div>
+                    <input
+                        type="checkbox"
+                        bind:checked={notificationState.settings.sound_enabled}
+                        onchange={() => saveNotificationSettings(notificationState.settings)}
+                        class="mt-1 accent-yellow-400 rounded cursor-pointer w-4 h-4"
+                    />
+                </label>
+            </div>
+
+            <!-- Alert Frequency / Minimum Cooldown -->
+            <div class="pt-2 border-t border-zinc-800/80">
+                <div class="space-y-1.5">
+                    <label for="frequencySelect" class="text-xs font-bold text-zinc-300 uppercase tracking-wider block">Minimum Alert Cooldown</label>
+                    <select
+                        id="frequencySelect"
+                        bind:value={notificationState.settings.frequency_minutes}
+                        onchange={() => saveNotificationSettings(notificationState.settings)}
+                        class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-yellow-200"
+                    >
+                        <option value={30}>Every 30 Minutes (Frequent)</option>
+                        <option value={60}>Every 1 Hour (Recommended)</option>
+                        <option value={120}>Every 2 Hours (Moderate)</option>
+                        <option value={240}>Every 4 Hours (Minimal)</option>
+                    </select>
+                </div>
+            </div>
         </div>
 
         {#if !isAndroidTauri || showAdvancedMobile}

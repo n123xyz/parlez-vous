@@ -66,12 +66,12 @@ pub async fn generate_supertonic_tts<R: Runtime>(
         let style = load_voice_style(&[style_path.to_string_lossy().to_string()], false)
             .map_err(|e| crate::Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
 
-        let mut final_lang = crate::helper::normalize_lang_code(&payload.lang);
-        if let Some(info) = whatlang::detect(&payload.text) {
-            let code = info.lang().code();
-            if crate::helper::is_valid_lang(code) {
-                final_lang = code.to_string();
-            }
+        let final_lang = crate::helper::normalize_lang_code(&payload.lang);
+        if !crate::helper::is_valid_lang(&final_lang) {
+            return Err(crate::Error::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("Unsupported language by Supertonic: {}", payload.lang)
+            )));
         }
 
         let (wav_data, _dur) = tts.call(
