@@ -41,6 +41,7 @@
     let camera: any = undefined as any;
     let animationFrameId: number = undefined as any;
     let handleResize: () => void = undefined as any;
+    let resizeObserver: ResizeObserver | null = null;
 
     let audioContext: AudioContext = undefined as any;
     let lipsyncNode: any = undefined;
@@ -74,17 +75,57 @@
     let reviewThemeCandidate = $state<{ id: string; name: string } | null>(null);
     let showReviewModal = $state(false);
 
-    // --- NEW: Hangul Handwriting Keyboard State ---
+    // --- Handwriting Keyboard & Word Building State ---
+    type HandwritingScript = 'korean' | 'russian' | 'ukrainian';
     const INITIALS = ['ㄱ', 'ㄲ', 'ㄴ', 'ㄷ', 'ㄸ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅃ', 'ㅅ', 'ㅆ', 'ㅇ', 'ㅈ', 'ㅉ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'];
     const VOWELS = ['ㅏ', 'ㅐ', 'ㅑ', 'ㅒ', 'ㅓ', 'ㅔ', 'ㅕ', 'ㅖ', 'ㅗ', 'ㅘ', 'ㅙ', 'ㅚ', 'ㅛ', 'ㅜ', 'ㅝ', 'ㅞ', 'ㅟ', 'ㅠ', 'ㅡ', 'ㅢ', 'ㅣ'];
     const FINALS = ['', 'ㄱ', 'ㄲ', 'ㄳ', 'ㄴ', 'ㄵ', 'ㄶ', 'ㄷ', 'ㄹ', 'ㄺ', 'ㄻ', 'ㄼ', 'ㄽ', 'ㄾ', 'ㄿ', 'ㅀ', 'ㅁ', 'ㅂ', 'ㅄ', 'ㅅ', 'ㅆ', 'ㅇ', 'ㅈ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'];
 
-    let isKorean = $derived(settingsState.targetLanguage?.trim().toLowerCase() === 'korean');
+    const RUSSIAN_ALPHABET = [
+        'а', 'б', 'в', 'г', 'д', 'е', 'ё', 'ж', 'з', 'и', 'й',
+        'к', 'л', 'м', 'н', 'о', 'п', 'р', 'с', 'т', 'у', 'ф',
+        'х', 'ц', 'ч', 'ш', 'щ', 'ъ', 'ы', 'ь', 'э', 'ю', 'я'
+    ];
+
+    const UKRAINIAN_ALPHABET = [
+        'а', 'б', 'в', 'г', 'ґ', 'д', 'е', 'є', 'ж', 'з', 'и',
+        'і', 'ї', 'й', 'к', 'л', 'м', 'н', 'о', 'п', 'р', 'с',
+        'т', 'у', 'ф', 'х', 'ц', 'ч', 'ш', 'щ', 'ь', 'ю', 'я'
+    ];
+
+    let targetLangLower = $derived((settingsState.targetLanguage || '').trim().toLowerCase());
+    let activeScript = $derived<HandwritingScript>(
+        targetLangLower.includes('russian') ? 'russian' :
+        targetLangLower.includes('ukrainian') ? 'ukrainian' :
+        'korean'
+    );
+
+    let isKorean = $derived(activeScript === 'korean');
+    let isCyrillic = $derived(activeScript === 'russian' || activeScript === 'ukrainian');
+    let isWordBuildingSupported = $derived(
+        targetLangLower.includes('korean') ||
+        targetLangLower.includes('russian') ||
+        targetLangLower.includes('ukrainian') ||
+        !targetLangLower
+    );
+
+    $effect(() => {
+        // Automatically reset drawing and buffers whenever active script changes
+        const _ = activeScript;
+        clearWord();
+        clearHangulBlock();
+    });
+
     let showHandwritingPanel = $state(false);
     let currentSlot = $state<'initial' | 'vowel' | 'final'>('initial');
     let blockInitial = $state<string | null>(null);
     let blockVowel = $state<string | null>(null);
     let blockFinal = $state<string | null>(null);
+
+    // Cyrillic word building state
+    let composedWord = $state<string>('');
+    let isUppercase = $state<boolean>(false);
+    let lastRecognizedLetter = $state<string | null>(null);
 
     let composedHangul = $derived.by(() => {
         if (!blockInitial) return '';
@@ -265,11 +306,25 @@
             loadVRM(); 
         }
 
-        // 2. React to dynamic height/width changes caused by toggling the handwriting panel
+        // 2. React to dynamic height/width changes caused by toggling the handwriting panel or container shifts
         if (renderer && camera && containerWidth > 0 && containerHeight > 0) {
             camera.aspect = containerWidth / containerHeight;
             camera.updateProjectionMatrix();
-            renderer.setSize(containerWidth, containerHeight);
+            renderer.setSize(containerWidth, containerHeight, false);
+        }
+    });
+
+    $effect(() => {
+        // Trigger resize over the full duration of CSS height transitions (duration-300) when panel or viewMode toggles
+        const _ = showHandwritingPanel;
+        const __ = viewMode;
+        if (typeof window !== 'undefined') {
+            [0, 50, 100, 150, 200, 250, 300, 350, 400, 500].forEach((delay) => {
+                setTimeout(() => {
+                    if (handleResize) handleResize();
+                    window.dispatchEvent(new Event('resize'));
+                }, delay);
+            });
         }
     });
 
@@ -279,6 +334,10 @@
         if (animationFrameId) cancelAnimationFrame(animationFrameId);
         if (renderer) renderer.dispose();
         if (handleResize) window.removeEventListener('resize', handleResize);
+        if (resizeObserver) {
+            resizeObserver.disconnect();
+            resizeObserver = null;
+        }
         stopMic(); // Ensure mic is released on unmount
     });
 
@@ -442,45 +501,81 @@
             const pred = (await invoke('infer_character', {
                 pixels,
                 vocabId: 1,
-                targetText: ""
+                targetText: activeScript,
+                script: activeScript,
             })) as string;
             
             const match = pred.match(/^(\S+)/);
             if (match) {
                 const char = match[1];
-                if (currentSlot === 'initial') {
-                    if (INITIALS.includes(char)) {
-                        blockInitial = char;
-                        currentSlot = 'vowel';
-                        strokeStatusMsg = `Initial set to ${char}`;
-                        clearDrawingCanvas();
-                    } else {
-                        strokeStatusMsg = `${char} is not a valid initial consonant.`;
+                if (activeScript === 'korean') {
+                    if (currentSlot === 'initial') {
+                        if (INITIALS.includes(char)) {
+                            blockInitial = char;
+                            currentSlot = 'vowel';
+                            strokeStatusMsg = `Initial: ${char}`;
+                            clearDrawingCanvas();
+                        } else {
+                            strokeStatusMsg = `${char} not an initial`;
+                        }
+                    } else if (currentSlot === 'vowel') {
+                        if (VOWELS.includes(char)) {
+                            blockVowel = char;
+                            currentSlot = 'final';
+                            strokeStatusMsg = `Vowel: ${char}`;
+                            clearDrawingCanvas();
+                        } else {
+                            strokeStatusMsg = `${char} not a vowel`;
+                        }
+                    } else if (currentSlot === 'final') {
+                        if (FINALS.includes(char) && char !== '') {
+                            blockFinal = char;
+                            strokeStatusMsg = `Final: ${char}`;
+                            clearDrawingCanvas();
+                        } else {
+                            strokeStatusMsg = `${char} not a final`;
+                        }
                     }
-                } else if (currentSlot === 'vowel') {
-                    if (VOWELS.includes(char)) {
-                        blockVowel = char;
-                        currentSlot = 'final';
-                        strokeStatusMsg = `Vowel set to ${char}`;
-                        clearDrawingCanvas();
-                    } else {
-                        strokeStatusMsg = `${char} is not a valid vowel.`;
-                    }
-                } else if (currentSlot === 'final') {
-                    if (FINALS.includes(char) && char !== '') {
-                        blockFinal = char;
-                        strokeStatusMsg = `Final set to ${char}`;
-                        clearDrawingCanvas();
-                    } else {
-                        strokeStatusMsg = `${char} is not a valid final consonant.`;
-                    }
+                } else {
+                    // Russian / Ukrainian Cyrillic
+                    const formatted = isUppercase ? char.toUpperCase() : char.toLowerCase();
+                    composedWord += formatted;
+                    lastRecognizedLetter = formatted;
+                    strokeStatusMsg = `+${formatted}`;
+                    clearDrawingCanvas();
                 }
             }
         } catch (e) {
             strokeStatusMsg = `Recognition failed: ${e}`;
         } finally {
             isRecognizing = false;
-            setTimeout(() => { if (strokeStatusMsg) strokeStatusMsg = null; }, 3000);
+            setTimeout(() => { if (strokeStatusMsg) strokeStatusMsg = null; }, 2500);
+        }
+    }
+
+    function appendLetter(char: string) {
+        const formatted = isUppercase ? char.toUpperCase() : char.toLowerCase();
+        composedWord += formatted;
+        lastRecognizedLetter = formatted;
+    }
+
+    function backspaceWord() {
+        if (composedWord.length > 0) {
+            composedWord = composedWord.slice(0, -1);
+        }
+    }
+
+    function clearWord() {
+        composedWord = '';
+        lastRecognizedLetter = null;
+        clearDrawingCanvas();
+        strokeStatusMsg = null;
+    }
+
+    function commitWord() {
+        if (composedWord.trim()) {
+            currentInput += (currentInput.length > 0 && !currentInput.endsWith(' ') ? ' ' : '') + composedWord;
+            clearWord();
         }
     }
 
@@ -673,21 +768,37 @@
         const ambient = new THREE.AmbientLight(0x404040, 1.0);
         scene.add(ambient);
 
-        camera = new THREE.PerspectiveCamera(30.0, canvasContainer.clientWidth / canvasContainer.clientHeight, 0.1, 20.0);
+        const initWidth = Math.max(canvasContainer.clientWidth, 1);
+        const initHeight = Math.max(canvasContainer.clientHeight, 1);
+        camera = new THREE.PerspectiveCamera(30.0, initWidth / initHeight, 0.1, 20.0);
         camera.position.set(0.0, 1.4, 2.0);
 
         renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-        renderer.setSize(canvasContainer.clientWidth, canvasContainer.clientHeight);
         renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setSize(initWidth, initHeight, false);
+        renderer.domElement.style.width = '100%';
+        renderer.domElement.style.height = '100%';
+        renderer.domElement.style.display = 'block';
         canvasContainer.appendChild(renderer.domElement);
 
         handleResize = () => {
-            if (!canvasContainer) return;
-            camera.aspect = canvasContainer.clientWidth / canvasContainer.clientHeight;
+            if (!canvasContainer || !camera || !renderer) return;
+            const width = canvasContainer.clientWidth;
+            const height = canvasContainer.clientHeight;
+            if (width <= 0 || height <= 0) return;
+            camera.aspect = width / height;
             camera.updateProjectionMatrix();
-            renderer.setSize(canvasContainer.clientWidth, canvasContainer.clientHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(width, height, false);
         };
         window.addEventListener('resize', handleResize);
+
+        if (typeof ResizeObserver !== 'undefined' && canvasContainer) {
+            resizeObserver = new ResizeObserver(() => {
+                if (handleResize) handleResize();
+            });
+            resizeObserver.observe(canvasContainer);
+        }
 
         const animate = (timestamp: number) => {
             animationFrameId = requestAnimationFrame(animate);
@@ -962,7 +1073,7 @@
     }
 </script>
 
-<div bind:this={rootScrollContainer} class="h-[100dvh] w-full flex flex-col md:flex-row p-2 md:p-6 gap-2 md:gap-6 max-w-7xl mx-auto relative overflow-hidden">
+<div bind:this={rootScrollContainer} class="h-full w-full flex flex-col md:flex-row p-2 md:p-6 gap-2 md:gap-6 max-w-7xl mx-auto relative overflow-hidden">
     {#snippet viewModeControls()}
         <!-- Desktop view -->
         <div class="hidden md:flex items-center bg-zinc-900/80 backdrop-blur-md rounded-xl p-1 border border-zinc-700 shadow-lg">
@@ -1026,7 +1137,7 @@
         </div>
     {/if}
 
-    <div class="shrink-0 min-w-0 {viewMode === 'avatar' ? 'flex-1 h-full' : (showHandwritingPanel && isKorean ? 'h-[22vh]' : 'h-[40vh]')} md:h-auto md:flex-1 flex flex-col gap-2 md:gap-6 min-h-0 transition-all duration-300 {viewMode === 'chat' ? 'hidden' : ''}">
+    <div class="shrink-0 min-w-0 {viewMode === 'avatar' ? 'flex-1 h-full' : (showHandwritingPanel ? 'h-[22vh]' : 'h-[40vh]')} md:h-auto md:flex-1 flex flex-col gap-2 md:gap-6 min-h-0 transition-all duration-300 {viewMode === 'chat' ? 'hidden' : ''}">
         <div class="flex-1 bg-zinc-900 rounded-3xl overflow-hidden border border-zinc-800 shadow-2xl relative {activeTextbook ? 'max-h-[50%]' : ''}">
             <div bind:this={canvasContainer} bind:clientWidth={containerWidth} bind:clientHeight={containerHeight} class="w-full h-full"></div>
             <div class="absolute top-4 left-4 flex items-center gap-4">
@@ -1116,7 +1227,7 @@
         {/if}
     </div>
 
-    <div class="flex-1 min-w-0 flex flex-col bg-zinc-900 rounded-2xl md:rounded-3xl border border-zinc-800 shadow-xl overflow-hidden md:w-1/3 min-h-0 {showHandwritingPanel && isKorean ? 'xl:w-[600px]' : ''} {viewMode === 'avatar' ? 'hidden' : ''} {viewMode === 'chat' ? 'md:w-full' : ''}">
+    <div class="flex-1 min-w-0 flex flex-col bg-zinc-900 rounded-2xl md:rounded-3xl border border-zinc-800 shadow-xl overflow-hidden md:w-1/3 min-h-0 {showHandwritingPanel ? 'xl:w-[620px]' : ''} {viewMode === 'avatar' ? 'hidden' : ''} {viewMode === 'chat' ? 'md:w-full' : ''}">
         
         <div class="p-4 md:p-6 border-b border-zinc-800 bg-zinc-900/50 backdrop-blur-md flex justify-between items-center shrink-0">
             <div>
@@ -1191,7 +1302,7 @@
             </div>
         </div>
 
-        <div class="flex-1 overflow-y-auto p-4 md:p-6 space-y-6 flex flex-col min-h-[60px] md:min-h-0" bind:this={chatScrollContainer}>
+        <div class="flex-1 overflow-y-auto p-4 md:p-6 space-y-6 flex flex-col min-h-0 {showHandwritingPanel ? 'max-h-[20vh] md:max-h-none' : 'min-h-[60px] md:min-h-0'}" bind:this={chatScrollContainer}>
             {#if chatHistory.length === 0}
                 <div class="flex-1 flex items-center justify-center text-center">
                     <p class="text-zinc-500 text-sm">Start the conversation by saying hello in your target language!</p>
@@ -1257,12 +1368,13 @@
             {/if}
 
             <form class="flex gap-2" onsubmit={(e) => { e.preventDefault(); sendMessage(); }}>
-                {#if isKorean}
+                {#if isWordBuildingSupported}
                     <button 
                         type="button"
                         onclick={() => { 
                             showHandwritingPanel = !showHandwritingPanel; 
                             if (showHandwritingPanel) { 
+                                if (chatInputRef) chatInputRef.blur();
                                 setTimeout(() => {
                                     initDrawingCanvas();
                                     if (chatScrollContainer) chatScrollContainer.scrollTo({ top: chatScrollContainer.scrollHeight, behavior: 'smooth' });
@@ -1332,9 +1444,20 @@
             </form>
         </div>
 
-        {#if showHandwritingPanel && isKorean}
-            <div class="p-3 md:p-4 border-t border-zinc-800 bg-zinc-900 flex flex-col gap-4 shrink-0 shadow-inner overflow-y-auto max-h-[45vh] md:max-h-none relative z-0">
+        {#if showHandwritingPanel}
+            <div class="p-3 pb-8 md:p-4 md:pb-4 border-t border-zinc-800 bg-zinc-900 flex flex-col gap-3 shrink min-h-0 max-h-[60vh] md:max-h-none shadow-inner overflow-y-auto overscroll-contain relative z-0">
+                <!-- Modal Close Button -->
+                <button
+                    type="button"
+                    onclick={() => showHandwritingPanel = false}
+                    class="absolute top-2.5 right-2.5 p-1.5 rounded-lg bg-zinc-800/90 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-colors z-20"
+                    title="Close Handwriting Modal"
+                    aria-label="Close Handwriting Modal"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
                 <div class="flex flex-col xl:flex-row gap-4 items-center xl:items-stretch">
+                    <!-- Canvas Column -->
                     <div class="flex flex-col items-center gap-2 w-full xl:w-auto shrink-0">
                         <canvas
                             bind:this={drawingCanvas}
@@ -1362,36 +1485,86 @@
                         {/if}
                     </div>
 
-                    <div class="flex-1 flex flex-col gap-3 sm:gap-4 bg-zinc-950 rounded-2xl p-3 sm:p-4 border border-zinc-800 relative w-full min-w-0 shrink-0">
-                        <div class="text-center shrink-0">
-                            <h3 class="text-xs sm:text-sm font-semibold text-zinc-400 uppercase tracking-widest">Block</h3>
-                            <div class="text-4xl sm:text-5xl font-black text-yellow-200 h-14 sm:h-16 flex items-center justify-center mt-1">
-                                {composedHangul || '-'}
+                    <!-- Builder Column -->
+                    <div class="flex-1 flex flex-col gap-3 bg-zinc-950 rounded-2xl p-3 sm:p-4 border border-zinc-800 relative w-full min-w-0 shrink-0">
+                        {#if activeScript === 'korean'}
+                            <!-- Korean Block Builder -->
+                            <div class="text-center shrink-0">
+                                <h3 class="text-xs font-semibold text-zinc-400 uppercase tracking-widest">Block</h3>
+                                <div class="text-4xl sm:text-5xl font-black text-yellow-200 h-14 sm:h-16 flex items-center justify-center mt-1">
+                                    {composedHangul || '-'}
+                                </div>
                             </div>
-                        </div>
 
-                        <div class="flex justify-between gap-1 sm:gap-2 shrink-0">
-                            <button onclick={() => { currentSlot = 'initial'; clearDrawingCanvas(); }} class="flex-1 p-2 sm:p-3 rounded-xl border flex flex-col items-center transition-colors {currentSlot === 'initial' ? 'bg-yellow-200/10 border-yellow-200/50' : 'bg-zinc-900 border-zinc-800 hover:bg-zinc-800'}">
-                                <span class="text-[10px] sm:text-xs text-zinc-500 uppercase">Initial</span>
-                                <span class="text-lg sm:text-xl font-bold {blockInitial ? 'text-zinc-200' : 'text-zinc-600'}">{blockInitial || '-'}</span>
-                            </button>
-                            <button onclick={() => { currentSlot = 'vowel'; clearDrawingCanvas(); }} class="flex-1 p-2 sm:p-3 rounded-xl border flex flex-col items-center transition-colors {currentSlot === 'vowel' ? 'bg-yellow-200/10 border-yellow-200/50' : 'bg-zinc-900 border-zinc-800 hover:bg-zinc-800'}">
-                                <span class="text-[10px] sm:text-xs text-zinc-500 uppercase">Vowel</span>
-                                <span class="text-lg sm:text-xl font-bold {blockVowel ? 'text-zinc-200' : 'text-zinc-600'}">{blockVowel || '-'}</span>
-                            </button>
-                            <button onclick={() => { currentSlot = 'final'; clearDrawingCanvas(); }} class="flex-1 p-2 sm:p-3 rounded-xl border flex flex-col items-center transition-colors {currentSlot === 'final' ? 'bg-yellow-200/10 border-yellow-200/50' : 'bg-zinc-900 border-zinc-800 hover:bg-zinc-800'}">
-                                <span class="text-[10px] sm:text-xs text-zinc-500 uppercase">Final</span>
-                                <span class="text-lg sm:text-xl font-bold {blockFinal ? 'text-zinc-200' : 'text-zinc-600'}">{blockFinal || '-'}</span>
-                            </button>
-                        </div>
+                            <div class="flex justify-between gap-1 sm:gap-2 shrink-0">
+                                <button onclick={() => { currentSlot = 'initial'; clearDrawingCanvas(); }} class="flex-1 p-2 sm:p-3 rounded-xl border flex flex-col items-center transition-colors {currentSlot === 'initial' ? 'bg-yellow-200/10 border-yellow-200/50' : 'bg-zinc-900 border-zinc-800 hover:bg-zinc-800'}">
+                                    <span class="text-[10px] sm:text-xs text-zinc-500 uppercase">Initial</span>
+                                    <span class="text-lg sm:text-xl font-bold {blockInitial ? 'text-zinc-200' : 'text-zinc-600'}">{blockInitial || '-'}</span>
+                                </button>
+                                <button onclick={() => { currentSlot = 'vowel'; clearDrawingCanvas(); }} class="flex-1 p-2 sm:p-3 rounded-xl border flex flex-col items-center transition-colors {currentSlot === 'vowel' ? 'bg-yellow-200/10 border-yellow-200/50' : 'bg-zinc-900 border-zinc-800 hover:bg-zinc-800'}">
+                                    <span class="text-[10px] sm:text-xs text-zinc-500 uppercase">Vowel</span>
+                                    <span class="text-lg sm:text-xl font-bold {blockVowel ? 'text-zinc-200' : 'text-zinc-600'}">{blockVowel || '-'}</span>
+                                </button>
+                                <button onclick={() => { currentSlot = 'final'; clearDrawingCanvas(); }} class="flex-1 p-2 sm:p-3 rounded-xl border flex flex-col items-center transition-colors {currentSlot === 'final' ? 'bg-yellow-200/10 border-yellow-200/50' : 'bg-zinc-900 border-zinc-800 hover:bg-zinc-800'}">
+                                    <span class="text-[10px] sm:text-xs text-zinc-500 uppercase">Final</span>
+                                    <span class="text-lg sm:text-xl font-bold {blockFinal ? 'text-zinc-200' : 'text-zinc-600'}">{blockFinal || '-'}</span>
+                                </button>
+                            </div>
 
-                        <div class="flex gap-2 mt-auto shrink-0">
-                            <button onclick={clearHangulBlock} class="px-3 sm:px-4 py-2 sm:py-3 bg-zinc-800 hover:bg-red-500/20 text-zinc-300 hover:text-red-400 rounded-xl text-xs sm:text-sm font-medium transition-colors">Clear</button>
-                            <button onclick={() => currentInput += " "} class="px-3 sm:px-4 py-2 sm:py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-xl text-xs sm:text-sm font-medium transition-colors">Space</button>
-                            <button onclick={commitHangulBlock} disabled={!composedHangul} class="flex-1 py-2 sm:py-3 bg-yellow-200 hover:bg-yellow-300 text-zinc-900 rounded-xl text-xs sm:text-sm font-bold transition-colors disabled:opacity-50 whitespace-nowrap">
-                                Enter
-                            </button>
-                        </div>
+                            <div class="flex gap-2 mt-auto shrink-0">
+                                <button onclick={clearHangulBlock} class="px-3 sm:px-4 py-2 sm:py-3 bg-zinc-800 hover:bg-red-500/20 text-zinc-300 hover:text-red-400 rounded-xl text-xs sm:text-sm font-medium transition-colors">Clear</button>
+                                <button onclick={() => currentInput += " "} class="px-3 sm:px-4 py-2 sm:py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-xl text-xs sm:text-sm font-medium transition-colors">Space</button>
+                                <button onclick={commitHangulBlock} disabled={!composedHangul} class="flex-1 py-2 sm:py-3 bg-yellow-200 hover:bg-yellow-300 text-zinc-900 rounded-xl text-xs sm:text-sm font-bold transition-colors disabled:opacity-50 whitespace-nowrap">
+                                    Enter
+                                </button>
+                            </div>
+                        {:else}
+                            <!-- Russian / Ukrainian Word Builder -->
+                            <div class="text-center shrink-0">
+                                <h3 class="text-xs font-semibold text-zinc-400 uppercase tracking-widest">
+                                    {activeScript === 'russian' ? 'Russian Word' : 'Ukrainian Word'}
+                                </h3>
+                                <div class="text-2xl sm:text-3xl font-black text-yellow-200 h-12 sm:h-14 flex items-center justify-center mt-1 tracking-wider overflow-x-auto px-2">
+                                    {composedWord || '—'}
+                                </div>
+                            </div>
+
+                            <!-- Quick Alphabet Strip -->
+                            <div class="flex flex-col gap-1 shrink-0">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">Alphabet</span>
+                                    <button
+                                        type="button"
+                                        onclick={() => isUppercase = !isUppercase}
+                                        class="px-2 py-0.5 rounded-lg border text-[11px] font-bold transition-colors flex items-center gap-1 {isUppercase ? 'bg-yellow-200 text-zinc-900 border-yellow-200' : 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:text-zinc-200'}"
+                                        title="Toggle uppercase / lowercase"
+                                    >
+                                        {isUppercase ? 'AA' : 'aa'}
+                                    </button>
+                                </div>
+                                <div class="flex gap-1 overflow-x-auto pb-1 max-w-full scrollbar-none">
+                                    {#each (activeScript === 'russian' ? RUSSIAN_ALPHABET : UKRAINIAN_ALPHABET) as l}
+                                        <button
+                                            type="button"
+                                            onclick={() => appendLetter(l)}
+                                            class="shrink-0 w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-xs font-bold text-zinc-300 hover:text-yellow-200 transition-colors flex items-center justify-center"
+                                        >
+                                            {isUppercase ? l.toUpperCase() : l}
+                                        </button>
+                                    {/each}
+                                </div>
+                            </div>
+
+                            <!-- Actions Row -->
+                            <div class="flex gap-2 mt-auto shrink-0">
+                                <button onclick={clearWord} disabled={!composedWord} class="px-2.5 sm:px-3 py-2 bg-zinc-800 hover:bg-red-500/20 text-zinc-300 hover:text-red-400 rounded-xl text-xs font-medium transition-colors disabled:opacity-40">Clear</button>
+                                <button onclick={backspaceWord} disabled={!composedWord} class="px-2.5 sm:px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-xl text-xs font-medium transition-colors disabled:opacity-40" title="Backspace">⌫</button>
+                                <button onclick={() => composedWord += " "} class="px-2.5 sm:px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-xl text-xs font-medium transition-colors">Space</button>
+                                <button onclick={commitWord} disabled={!composedWord.trim()} class="flex-1 py-2 sm:py-3 bg-yellow-200 hover:bg-yellow-300 text-zinc-900 rounded-xl text-xs sm:text-sm font-bold transition-colors disabled:opacity-50 whitespace-nowrap">
+                                    Enter
+                                </button>
+                            </div>
+                        {/if}
                     </div>
                 </div>
             </div>

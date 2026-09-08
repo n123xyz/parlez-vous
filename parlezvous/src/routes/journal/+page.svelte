@@ -131,8 +131,8 @@
     <!-- Left Column: Controls -->
     <div class="w-full md:w-1/3 space-y-6 bg-zinc-900 p-6 rounded-2xl border border-zinc-800 shadow-xl flex flex-col">
         <div>
-            <h2 class="text-2xl font-bold text-yellow-200">Journal Builder</h2>
-            <p class="text-sm text-zinc-400 mt-1">Targeting {settingsState.skillLevel} level in {settingsState.targetLanguage}</p>
+            <h2 class="text-2xl font-bold text-yellow-200">Journal</h2>
+            <p class="text-xs text-zinc-500 mt-1">{settingsState.targetLanguage} · {settingsState.skillLevel}</p>
         </div>
         
         <div class="flex gap-2 p-1 bg-zinc-950 rounded-xl border border-zinc-800">
@@ -140,23 +140,22 @@
                 class="flex-1 py-2 text-sm font-bold rounded-lg transition-colors {!isCustomMode ? 'bg-zinc-800 text-yellow-200' : 'text-zinc-500 hover:text-zinc-300'}"
                 onclick={() => isCustomMode = false}
             >
-                Scaffold
+                Prompts
             </button>
             <button 
                 class="flex-1 py-2 text-sm font-bold rounded-lg transition-colors {isCustomMode ? 'bg-zinc-800 text-yellow-200' : 'text-zinc-500 hover:text-zinc-300'}"
                 onclick={() => isCustomMode = true}
             >
-                Custom Entry
+                Free Write
             </button>
         </div>
 
         {#if isCustomMode}
             <div class="flex-1 flex flex-col min-h-[300px]">
-                <label for="customEntry" class="text-sm font-medium text-zinc-300 mb-2">Write your entry</label>
                 <textarea 
                     id="customEntry"
                     bind:value={customEntry}
-                    placeholder="Write a journal entry in your target language. The AI will judge, correct, and extract vocabulary from it."
+                    placeholder="Write in {settingsState.targetLanguage}..."
                     class="flex-1 w-full bg-zinc-950 border border-zinc-700 text-zinc-100 rounded-xl p-4 focus:outline-none focus:border-yellow-200 transition-colors resize-none"
                 ></textarea>
             </div>
@@ -211,7 +210,7 @@
             onclick={isCustomMode ? gradeJournal : generateJournal}
             disabled={isGenerating || (isCustomMode && !customEntry.trim()) || (!isCustomMode && selectedMoods.length === 0 && selectedWeathers.length === 0 && selectedActivities.length === 0)}
         >
-            {isGenerating ? 'Processing...' : (isCustomMode ? 'Submit for Grading' : 'Generate Entry')}
+            {isGenerating ? 'Generating...' : (isCustomMode ? 'Grade' : 'Generate')}
         </button>
     </div>
 
@@ -221,12 +220,12 @@
             <div class="flex-1 flex items-center justify-center bg-zinc-900/50 rounded-2xl border border-dashed border-zinc-700">
                 <div class="animate-pulse flex flex-col items-center">
                     <div class="w-12 h-12 border-4 border-yellow-200 border-t-transparent rounded-full animate-spin"></div>
-                    <p class="mt-4 text-zinc-400 font-medium">Consulting the model...</p>
+                    <p class="mt-4 text-zinc-400 font-medium">Generating...</p>
                 </div>
             </div>
         {:else if journalResult}
             <div class="bg-zinc-900 p-8 rounded-2xl border border-zinc-800 shadow-xl prose prose-invert max-w-none relative">
-                <h3 class="text-xl font-medium text-yellow-200 mb-4 border-b border-zinc-800 pb-2">Target Language</h3>
+                <h3 class="text-xl font-medium text-yellow-200 mb-4 border-b border-zinc-800 pb-2">{settingsState.targetLanguage}</h3>
                 <button 
                     class="absolute top-8 right-8 text-yellow-200 hover:text-yellow-400 bg-zinc-800 p-2 rounded-full transition-colors border border-zinc-700 hover:border-yellow-200/50"
                     onclick={() => playSmartTTS(journalResult!.generated_target_text, settingsState.ttsServerUrl, undefined, settingsState.targetLanguage)}
@@ -236,13 +235,13 @@
                 </button>
                 <p class="text-lg text-zinc-100 leading-relaxed pr-10">{journalResult.generated_target_text}</p>
                 
-                <h3 class="text-xl font-medium text-zinc-400 mt-8 mb-4 border-b border-zinc-800 pb-2">Native Translation</h3>
+                <h3 class="text-xl font-medium text-zinc-400 mt-8 mb-4 border-b border-zinc-800 pb-2">Translation</h3>
                 <p class="text-zinc-300 italic">{journalResult.native_translation}</p>
 
                 {#if isCustomMode && journalResult.feedback}
                     <div class="mt-8 p-6 bg-blue-500/10 border border-blue-500/20 rounded-2xl">
                         <h3 class="text-sm font-bold text-blue-400 uppercase tracking-widest mb-3 flex items-center gap-2">
-                            <span class="text-lg">👨‍🏫</span> Teacher's Feedback
+                            Feedback
                         </h3>
                         <div class="prose prose-invert prose-sm max-w-none prose-p:my-1 prose-headings:my-2 prose-a:text-yellow-200 text-zinc-200 leading-relaxed italic">
                             {@html marked.parse(journalResult.feedback)}
@@ -253,7 +252,7 @@
 
             {#if vocabChips.length > 0}
                 <div class="bg-zinc-900/50 p-6 rounded-2xl border border-zinc-800">
-                    <h3 class="text-sm uppercase tracking-widest text-zinc-500 mb-4">Extracted Vocabulary (Click to add to SRS)</h3>
+                    <h3 class="text-xs font-bold uppercase tracking-widest text-zinc-500 mb-3">Vocabulary</h3>
                     <div class="flex flex-wrap gap-3">
                         {#each vocabChips as chip}
                             <div class="group flex items-center bg-zinc-800 border border-zinc-700 hover:border-yellow-200/50 rounded-lg transition-all overflow-hidden">
@@ -279,7 +278,7 @@
             {/if}
         {:else}
             <div class="flex-1 flex items-center justify-center bg-zinc-900/20 rounded-2xl border border-dashed border-zinc-800">
-                <p class="text-zinc-500">Select your parameters and generate to see the result here.</p>
+                <p class="text-zinc-600 text-sm">Ready</p>
             </div>
         {/if}
     </div>

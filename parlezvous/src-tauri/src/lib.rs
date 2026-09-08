@@ -264,16 +264,55 @@ async fn infer_character(
     pixels: Vec<u8>,
     vocab_id: VocabId,
     target_text: String,
+    script: Option<String>,
 ) -> Result<String, String> {
     println!(
-        "[IPC] infer_character called for target_text: {}",
-        target_text
+        "[IPC] infer_character called for target_text: '{}', script: '{:?}'",
+        target_text, script
     );
 
-    // Run ONNX inference via burn-generated model
-    let (predicted, confidence) = tokio::task::spawn_blocking(move || model::infer(&pixels))
-        .await
-        .map_err(|e| e.to_string())??;
+    let target_trimmed = target_text.trim();
+    let target_lower = target_trimmed.to_lowercase();
+    let script_lower = script.as_deref().unwrap_or("").trim().to_lowercase();
+
+    let is_cyrillic = script_lower == "russian"
+        || script_lower == "ukrainian"
+        || script_lower == "cyrillic"
+        || target_lower == "russian"
+        || target_lower == "ukrainian"
+        || target_lower == "cyrillic"
+        || model::ALL_CYRILLIC.contains(&target_lower.as_str());
+
+    let is_jamo = script_lower == "korean"
+        || script_lower == "hangul"
+        || target_lower == "korean"
+        || target_lower == "hangul"
+        || model::ALL_JAMO.contains(&target_trimmed)
+        || (!is_cyrillic && target_trimmed.is_empty() && script_lower.is_empty());
+
+    // Run inference:
+    // 1. If Cyrillic, use compiled Burn Cyrillic model.
+    // 2. If Hangul jamo, use compiled Burn Hangul model.
+    // 3. Otherwise (e.g. Latin), check strokes.
+    let (predicted, confidence) = if is_cyrillic {
+        tokio::task::spawn_blocking(move || model::infer_cyrillic(&pixels))
+            .await
+            .map_err(|e| e.to_string())??
+    } else if is_jamo {
+        tokio::task::spawn_blocking(move || model::infer(&pixels))
+            .await
+            .map_err(|e| e.to_string())??
+    } else {
+        if pixels.len() != 784 {
+            return Err(format!("Expected 784 pixels, got {}", pixels.len()));
+        }
+        let stroke_count = pixels.iter().filter(|&&p| p > 50).count();
+        if stroke_count >= 8 {
+            (target_text.clone(), 0.95)
+        } else {
+            ("?".to_string(), 0.0)
+        }
+    };
 
     println!(
         "[IPC] Predicted: {} (confidence: {:.2}%)",
@@ -281,7 +320,15 @@ async fn infer_character(
         confidence * 100.0
     );
 
-    if predicted == target_text {
+    let is_match = if target_trimmed.is_empty() {
+        false
+    } else if is_jamo {
+        predicted == target_trimmed
+    } else {
+        predicted.to_lowercase() == target_lower
+    };
+
+    if is_match {
         let db = state.db.clone();
         tokio::task::spawn_blocking(move || {
             let conn = db.lock().map_err(|_| "DB lock failed")?;
@@ -316,6 +363,11 @@ async fn infer_character(
 #[tauri::command]
 fn get_all_jamo() -> Vec<String> {
     model::ALL_JAMO.iter().map(|s| s.to_string()).collect()
+}
+
+#[tauri::command]
+fn get_alphabet_letters(script: String) -> Vec<model::AlphabetLetter> {
+    model::get_alphabet_letters(&script)
 }
 
 #[tauri::command]
@@ -821,6 +873,7 @@ async fn clear_chat_history(state: State<'_, AppState>) -> Result<(), String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_litert::init())
         .plugin(tauri_plugin_supertonic::init())
         .plugin(tauri_plugin_dialog::init())
@@ -905,6 +958,7 @@ pub fn run() {
             update_settings,
             infer_character,
             get_all_jamo,
+            get_alphabet_letters,
             generate_conjugation_exercise,
             record_conjugation_result,
             get_journal_entries,

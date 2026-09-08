@@ -3,6 +3,7 @@
     import { onMount } from 'svelte';
     import { checkOllamaHealth, ollamaState } from '$lib/state/ollama.svelte.ts';
     import { loadSettings, settingsState } from '$lib/state/settings.svelte.ts';
+    import { startNotificationTicker, loadNotificationSettings } from '$lib/services/notifications.svelte.ts';
     import { Toaster } from 'svelte-french-toast';
     import { page } from '$app/stores';
 
@@ -13,6 +14,8 @@
     onMount(() => {
         checkOllamaHealth();
         loadSettings();
+        loadNotificationSettings();
+        startNotificationTicker();
     });
 </script>
 
@@ -34,9 +37,7 @@
             <a href="/flashcards" class="text-zinc-400 hover:text-yellow-200 font-medium transition-colors text-sm md:text-base {currentPath === '/flashcards' ? 'text-yellow-200' : ''}">Flashcards</a>
             <a href="/conjugator" class="text-zinc-400 hover:text-yellow-200 font-medium transition-colors text-sm md:text-base {currentPath === '/conjugator' ? 'text-yellow-200' : ''}">Conjugator</a>
             <a href="/calendar" class="text-zinc-400 hover:text-yellow-200 font-medium transition-colors text-sm md:text-base {currentPath === '/calendar' ? 'text-yellow-200' : ''}">Calendar</a>
-            {#if isKorean}
-                <a href="/canvas" class="text-zinc-400 hover:text-yellow-200 font-medium transition-colors text-sm md:text-base {currentPath === '/canvas' ? 'text-yellow-200' : ''}">Canvas</a>
-            {/if}
+            <a href="/canvas" class="text-zinc-400 hover:text-yellow-200 font-medium transition-colors text-sm md:text-base {currentPath === '/canvas' ? 'text-yellow-200' : ''}">Alphabet</a>
             <a href="/coding" class="text-zinc-400 hover:text-yellow-200 font-medium transition-colors text-sm md:text-base {currentPath === '/coding' ? 'text-yellow-200' : ''}">Coding</a>
             <a href="/language-game" class="text-zinc-400 hover:text-yellow-200 font-medium transition-colors text-sm md:text-base {currentPath === '/language-game' ? 'text-yellow-200' : ''}">Dash</a>
             <a href="/avatar" class="text-zinc-400 hover:text-yellow-200 font-medium transition-colors text-sm md:text-base {currentPath === '/avatar' ? 'text-yellow-200' : ''}">Avatar</a>

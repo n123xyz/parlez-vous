@@ -178,16 +178,16 @@
                     </div>
 
                     {#if puzzleType === 'keystone'}
-                        <div class="space-y-4">
+                        <div class="space-y-3">
                             <!-- svelte-ignore a11y_label_has_associated_control -->
-                            <label class="block text-sm font-medium text-zinc-400 ml-1">Fill in the blank (___BLANK___):</label>
+                            <label class="block text-xs font-bold uppercase tracking-wider text-zinc-500 ml-1">Fill in blank</label>
                             <div class="flex gap-4">
                                 <input 
                                     type="text" 
                                     bind:value={answerInput} 
                                     onkeydown={(e) => e.key === 'Enter' && checkKeystone()}
                                     class="flex-1 bg-zinc-950 border border-zinc-700 text-zinc-100 rounded-xl px-4 py-3 font-mono focus:outline-none focus:border-yellow-300 transition-colors"
-                                    placeholder="Type your answer here..."
+                                    placeholder="Answer..."
                                     autocomplete="off"
                                     spellcheck="false"
                                 />
@@ -201,7 +201,7 @@
                         </div>
                     {:else if puzzleType === 'speedrun'}
                         <div class="space-y-4">
-                            <p class="text-sm font-medium text-zinc-400 mb-4 text-center">What does this mean/do?</p>
+                            <p class="text-xs font-bold uppercase tracking-wider text-zinc-500 mb-4 text-center">Select answer</p>
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 {#each options as opt}
                                     <button 
@@ -220,13 +220,13 @@
                             onclick={nextPuzzle}
                             class="text-sm font-medium text-zinc-500 hover:text-yellow-300/80 transition-colors"
                         >
-                            Skip this puzzle
+                            Skip
                         </button>
                     </div>
                 </div>
             {:else}
                 <div class="text-center space-y-6">
-                    <p class="text-zinc-500">No puzzles available. Please check your LLM settings.</p>
+                    <p class="text-zinc-500 text-sm">No puzzles available.</p>
                     <button 
                         onclick={nextPuzzle}
                         class="px-6 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-full transition-colors"
