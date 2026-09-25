@@ -9,6 +9,21 @@
     import { initTTSAudio, playTTS, setPlaybackRate, ttsPlaybackRate, setLipSyncNode, playSupertonicTTS, playSmartTTS } from '$lib/tts';
     import { CURRICULUM_TIERS, getTierFromXP, getRandomThemeAndSubthemeForTier } from '$lib/curriculum';
     import { timeTracker } from '$lib/state/timeTracker.svelte.ts';
+    import { 
+        ROLEPLAY_SCENARIOS, 
+        getScenarioById, 
+        getScenarioInitialGreeting, 
+        getScenarioStarterPhrases, 
+        type RoleplayPersona 
+    } from '$lib/roleplay';
+    import { 
+        roleplayState, 
+        selectScenario, 
+        clearScenario, 
+        toggleObjective, 
+        createCustomScenario 
+    } from '$lib/state/roleplay.svelte.ts';
+    import { page } from '$app/stores';
 
     // Module variables for heavy libraries to avoid TDZ (Temporal Dead Zone) crashes
     let THREE: any;
@@ -74,6 +89,30 @@
     let activeThemeId = $state<string | null>(null);
     let reviewThemeCandidate = $state<{ id: string; name: string } | null>(null);
     let showReviewModal = $state(false);
+
+    // --- Roleplay & Personas State ---
+    let scenarioCategory = $state<'all' | 'dining' | 'shopping' | 'travel' | 'services' | 'custom'>('all');
+    let filteredScenarios = $derived(
+        scenarioCategory === 'all' 
+            ? ROLEPLAY_SCENARIOS 
+            : ROLEPLAY_SCENARIOS.filter(s => s.category === scenarioCategory)
+    );
+    let starterPhrases = $derived(
+        roleplayState.activeScenario 
+            ? getScenarioStarterPhrases(roleplayState.activeScenario, settingsState.targetLanguage) 
+            : []
+    );
+    let completedCount = $derived(
+        roleplayState.activeScenario 
+            ? roleplayState.activeScenario.objectives.filter(o => roleplayState.completedObjectives[o.id]).length 
+            : 0
+    );
+    let totalObjectives = $derived(
+        roleplayState.activeScenario 
+            ? roleplayState.activeScenario.objectives.length 
+            : 0
+    );
+    let currentLoadedVrm = $state(settingsState.activeVrm || 'avatar.vrm');
 
     // --- Handwriting Keyboard & Word Building State ---
     type HandwritingScript = 'korean' | 'russian' | 'ukrainian';
@@ -297,6 +336,16 @@
         libsLoaded = true;
 
         timeTracker.startTracking();
+
+        const scenarioQuery = $page.url.searchParams.get('scenario');
+        if (scenarioQuery) {
+            const found = getScenarioById(scenarioQuery);
+            if (found) {
+                setTimeout(() => {
+                    startRoleplay(found);
+                }, 500);
+            }
+        }
     });
 
     $effect(() => {
@@ -861,13 +910,21 @@
         }
     }
 
-    async function loadVRM() {
+    async function loadVRM(modelName?: string) {
+        const targetModel = modelName || settingsState.activeVrm || 'avatar.vrm';
+        if (currentVrm && scene) {
+            scene.remove(currentVrm.scene);
+            currentVrm = null;
+        }
+        isLoading = true;
+        currentLoadedVrm = targetModel;
+
         const loader = new GLTFLoader();
         loader.register((parser: any) => new VRMLoaderPlugin(parser));
         loader.register((parser: any) => new VRMAnimationLoaderPlugin(parser));
 
         loader.load(
-            '/vrm/' + settingsState.activeVrm,
+            '/vrm/' + targetModel,
             (gltf: any) => {
                 const vrm = gltf.userData.vrm as any;
                 if (scene) scene.add(vrm.scene);
@@ -884,6 +941,41 @@
                 isLoading = false;
             }
         );
+    }
+
+    async function startRoleplay(scenario: RoleplayPersona) {
+        selectScenario(scenario);
+
+        if (scenario.vrmModel && currentLoadedVrm !== scenario.vrmModel && scene) {
+            loadVRM(scenario.vrmModel);
+        }
+
+        const greeting = getScenarioInitialGreeting(scenario, settingsState.targetLanguage);
+
+        const welcomeMsg = { role: 'assistant', content: greeting.target };
+        chatHistory = [...chatHistory, welcomeMsg];
+        invoke('save_chat_message', {
+            role: welcomeMsg.role,
+            content: welcomeMsg.content,
+            correction: null,
+            audioBase64: null
+        }).catch(e => console.error(e));
+
+        await tick();
+        if (chatScrollContainer) {
+            chatScrollContainer.scrollTo({ top: chatScrollContainer.scrollHeight, behavior: 'smooth' });
+        }
+
+        generateAndPlayTTS(greeting.target);
+    }
+
+    function useStarterPhrase(phraseText: string) {
+        currentInput = phraseText;
+        if (chatInputRef) {
+            chatInputRef.focus();
+            chatInputRef.style.height = 'auto';
+            chatInputRef.style.height = chatInputRef.scrollHeight + 'px';
+        }
     }
 
     function playAnim(animCode: string) {
@@ -994,19 +1086,21 @@
                 return msg;
             }).reverse();
 
-            let targetTheme = mapFollowMode ? activeThemeId : null;
+            let targetTheme = roleplayState.activeScenario ? null : (mapFollowMode ? activeThemeId : null);
             let targetSubtheme = null;
-            try {
-                const curriculum: any = await invoke('get_curriculum', { language: settingsState.targetLanguage });
-                const tier = getTierFromXP(curriculum.total_xp || 0);
-                const randomTopic = getRandomThemeAndSubthemeForTier(tier);
-                
-                if (!mapFollowMode) {
-                    targetTheme = randomTopic.theme;
+            if (!roleplayState.activeScenario) {
+                try {
+                    const curriculum: any = await invoke('get_curriculum', { language: settingsState.targetLanguage });
+                    const tier = getTierFromXP(curriculum.total_xp || 0);
+                    const randomTopic = getRandomThemeAndSubthemeForTier(tier);
+                    
+                    if (!mapFollowMode) {
+                        targetTheme = randomTopic.theme;
+                    }
+                    targetSubtheme = randomTopic.subtheme;
+                } catch(e) {
+                    console.error("Failed to fetch tier for avatar chat:", e);
                 }
-                targetSubtheme = randomTopic.subtheme;
-            } catch(e) {
-                console.error("Failed to fetch tier for avatar chat:", e);
             }
 
             const response = (await invoke('chat_with_avatar', {
@@ -1017,7 +1111,8 @@
                 activePage: activePage,
                 activeTheme: targetTheme,
                 activeSubtheme: targetSubtheme,
-                audioBase64: audioBase64 || null
+                audioBase64: audioBase64 || null,
+                roleplayScenario: roleplayState.activeScenario ? roleplayState.activeScenario.scenarioPrompt : null
             })) as { response: string; idealized_correction?: string; context_summary?: string };
 
             if (response.idealized_correction && response.idealized_correction !== "null" && response.idealized_correction.trim() !== "") {
@@ -1130,6 +1225,278 @@
             </div>
         </div>
     {/if}
+
+    <!-- Roleplay Scenario & Persona Selector Modal -->
+    {#if roleplayState.isSelectorOpen}
+        <div class="absolute inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-3 sm:p-6 overflow-y-auto">
+            <div class="bg-zinc-900 border border-zinc-700/80 rounded-3xl max-w-4xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                <!-- Modal Header -->
+                <div class="p-5 sm:p-6 border-b border-zinc-800 bg-zinc-950/60 flex items-center justify-between shrink-0">
+                    <div class="flex items-center gap-3">
+                        <div class="w-12 h-12 rounded-2xl bg-yellow-400/10 border border-yellow-400/20 flex items-center justify-center text-2xl shadow-[0_0_15px_rgba(253,253,150,0.15)]">
+                            🎭
+                        </div>
+                        <div class="flex flex-col">
+                            <h2 class="text-xl sm:text-2xl font-black text-zinc-100 flex items-center gap-2">
+                                Situational Roleplay & Personas
+                            </h2>
+                            <p class="text-xs sm:text-sm text-zinc-400">
+                                Practice realistic conversations in {settingsState.targetLanguage} with AI personas tailored to your skill level.
+                            </p>
+                        </div>
+                    </div>
+                    <button
+                        type="button"
+                        onclick={() => roleplayState.isSelectorOpen = false}
+                        class="p-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-100 transition-colors"
+                        title="Close Modal"
+                    >
+                        ✕
+                    </button>
+                </div>
+
+                <!-- Category Navigation -->
+                <div class="px-5 py-3 border-b border-zinc-800 bg-zinc-900/80 flex items-center gap-2 overflow-x-auto scrollbar-none shrink-0">
+                    <button
+                        type="button"
+                        onclick={() => scenarioCategory = 'all'}
+                        class="px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 {scenarioCategory === 'all' ? 'bg-yellow-200 text-zinc-900 shadow-md' : 'bg-zinc-800/80 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700'}"
+                    >
+                        All Scenarios ({ROLEPLAY_SCENARIOS.length})
+                    </button>
+                    <button
+                        type="button"
+                        onclick={() => scenarioCategory = 'dining'}
+                        class="px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 {scenarioCategory === 'dining' ? 'bg-yellow-200 text-zinc-900 shadow-md' : 'bg-zinc-800/80 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700'}"
+                    >
+                        <span>☕</span> Dining & Food
+                    </button>
+                    <button
+                        type="button"
+                        onclick={() => scenarioCategory = 'shopping'}
+                        class="px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 {scenarioCategory === 'shopping' ? 'bg-yellow-200 text-zinc-900 shadow-md' : 'bg-zinc-800/80 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700'}"
+                    >
+                        <span>🏷️</span> Shopping & Market
+                    </button>
+                    <button
+                        type="button"
+                        onclick={() => scenarioCategory = 'travel'}
+                        class="px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 {scenarioCategory === 'travel' ? 'bg-yellow-200 text-zinc-900 shadow-md' : 'bg-zinc-800/80 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700'}"
+                    >
+                        <span>🏨</span> Travel & Transit
+                    </button>
+                    <button
+                        type="button"
+                        onclick={() => scenarioCategory = 'services'}
+                        class="px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 {scenarioCategory === 'services' ? 'bg-yellow-200 text-zinc-900 shadow-md' : 'bg-zinc-800/80 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700'}"
+                    >
+                        <span>💊</span> Health & Services
+                    </button>
+                    <button
+                        type="button"
+                        onclick={() => scenarioCategory = 'custom'}
+                        class="px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 {scenarioCategory === 'custom' ? 'bg-yellow-200 text-zinc-900 shadow-md' : 'bg-zinc-800/80 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700'}"
+                    >
+                        <span>✨</span> Custom Scenario
+                    </button>
+                </div>
+
+                <!-- Modal Body (Scenario Cards or Custom Form) -->
+                <div class="p-5 sm:p-6 overflow-y-auto flex-1 space-y-4">
+                    {#if scenarioCategory === 'custom'}
+                        <!-- Custom Scenario Builder Form -->
+                        <div class="bg-zinc-950/70 border border-zinc-800 p-6 rounded-2xl flex flex-col gap-4">
+                            <div>
+                                <h3 class="text-lg font-bold text-zinc-100 flex items-center gap-2">
+                                    <span>✨</span> Design Your Custom Roleplay
+                                </h3>
+                                <p class="text-xs text-zinc-400 mt-0.5">
+                                    Create any conversation scenario (e.g. Job Interview, Renting a Car, Art Gallery, Train Ticket Desk).
+                                </p>
+                            </div>
+
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div class="flex flex-col gap-1.5">
+                                    <label for="custom-title-input" class="text-xs font-semibold text-zinc-300">Scenario Title</label>
+                                    <input 
+                                        id="custom-title-input"
+                                        type="text" 
+                                        bind:value={roleplayState.customTitle}
+                                        placeholder="e.g. Vintage Bookstore" 
+                                        class="bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-yellow-200/50"
+                                    />
+                                </div>
+                                <div class="flex flex-col gap-1.5">
+                                    <label for="custom-role-input" class="text-xs font-semibold text-zinc-300">Persona Name & Role</label>
+                                    <input 
+                                        id="custom-role-input"
+                                        type="text" 
+                                        bind:value={roleplayState.customRole}
+                                        placeholder="e.g. Julian • Passionate Bookseller" 
+                                        class="bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-yellow-200/50"
+                                    />
+                                </div>
+                            </div>
+
+                            <div class="flex flex-col gap-1.5">
+                                <label for="custom-setting-input" class="text-xs font-semibold text-zinc-300">Setting / Environment</label>
+                                <input 
+                                    id="custom-setting-input"
+                                    type="text" 
+                                    bind:value={roleplayState.customSetting}
+                                    placeholder="e.g. A dusty secondhand bookstore in central Paris with antique posters." 
+                                    class="bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-yellow-200/50"
+                                />
+                            </div>
+
+                            <div class="flex flex-col gap-1.5">
+                                <label for="custom-prompt-input" class="text-xs font-semibold text-zinc-300">AI Persona Instructions & Behavior</label>
+                                <textarea 
+                                    id="custom-prompt-input"
+                                    bind:value={roleplayState.customPrompt}
+                                    rows="3"
+                                    placeholder="e.g. Greet the customer warmly, ask what genres they enjoy, recommend rare poetry or novels, discuss prices, and recommend a nearby bakery."
+                                    class="bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-yellow-200/50 resize-none"
+                                ></textarea>
+                            </div>
+
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div class="flex flex-col gap-1.5">
+                                    <label for="custom-greeting-input" class="text-xs font-semibold text-zinc-300">Opening Greeting</label>
+                                    <input 
+                                        id="custom-greeting-input"
+                                        type="text" 
+                                        bind:value={roleplayState.customGreeting}
+                                        placeholder="e.g. Bonjour ! Bienvenue dans ma librairie. Cherchez-vous un livre particulier ?" 
+                                        class="bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-yellow-200/50"
+                                    />
+                                </div>
+                                <div class="flex flex-col gap-1.5">
+                                    <span class="text-xs font-semibold text-zinc-300">Avatar 3D Model</span>
+                                    <div class="flex gap-2">
+                                        <button
+                                            type="button"
+                                            onclick={() => roleplayState.customVrm = 'avatar.vrm'}
+                                            class="flex-1 py-2 rounded-xl text-xs font-semibold border transition-all {roleplayState.customVrm === 'avatar.vrm' ? 'bg-yellow-200 text-zinc-900 border-yellow-200' : 'bg-zinc-900 text-zinc-400 border-zinc-700'}"
+                                        >
+                                            Avatar (Female)
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onclick={() => roleplayState.customVrm = 'man.vrm'}
+                                            class="flex-1 py-2 rounded-xl text-xs font-semibold border transition-all {roleplayState.customVrm === 'man.vrm' ? 'bg-yellow-200 text-zinc-900 border-yellow-200' : 'bg-zinc-900 text-zinc-400 border-zinc-700'}"
+                                        >
+                                            Man (Male)
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <button
+                                type="button"
+                                onclick={() => {
+                                    const custom = createCustomScenario();
+                                    startRoleplay(custom);
+                                }}
+                                class="mt-2 w-full py-3 rounded-xl bg-yellow-200 hover:bg-yellow-300 text-zinc-900 font-bold transition-all shadow-md flex items-center justify-center gap-2"
+                            >
+                                <span>🚀</span> Launch Custom Roleplay
+                            </button>
+                        </div>
+                    {:else}
+                        <!-- Scenarios Grid -->
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {#each filteredScenarios as scenario}
+                                {@const isActive = roleplayState.activeScenario?.id === scenario.id}
+                                <div class="relative bg-zinc-950/80 border {isActive ? 'border-yellow-300/80 shadow-[0_0_20px_rgba(253,253,150,0.1)]' : 'border-zinc-800 hover:border-zinc-700'} rounded-2xl p-4 sm:p-5 flex flex-col justify-between gap-4 transition-all">
+                                    <div class="flex flex-col gap-3">
+                                        <div class="flex items-start justify-between gap-2">
+                                            <div class="flex items-center gap-3">
+                                                <div class="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl border {scenario.color}">
+                                                    {scenario.icon}
+                                                </div>
+                                                <div class="flex flex-col">
+                                                    <h3 class="text-base sm:text-lg font-bold text-zinc-100 flex items-center gap-2">
+                                                        {scenario.title}
+                                                    </h3>
+                                                    <span class="text-xs text-yellow-200/90 font-medium">
+                                                        {scenario.personaName} • {scenario.role}
+                                                    </span>
+                                                </div>
+                                            </div>
+
+                                            <div class="flex items-center gap-1.5 shrink-0">
+                                                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold border {scenario.badgeColor}">
+                                                    {scenario.difficulty}
+                                                </span>
+                                                {#if isActive}
+                                                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-yellow-400 text-zinc-950">
+                                                        Active
+                                                    </span>
+                                                {/if}
+                                            </div>
+                                        </div>
+
+                                        <p class="text-xs text-zinc-400 leading-relaxed">
+                                            {scenario.summary}
+                                        </p>
+
+                                        <div class="bg-zinc-900/70 p-2.5 rounded-xl border border-zinc-800/80 text-[11px] text-zinc-400 flex flex-col gap-1">
+                                            <span class="font-semibold text-zinc-300 uppercase tracking-wider text-[10px]">Key Practice Goals:</span>
+                                            <ul class="list-disc list-inside space-y-0.5 text-zinc-400">
+                                                {#each scenario.objectives.slice(0, 3) as obj}
+                                                    <li class="truncate">{obj.description}</li>
+                                                {/each}
+                                            </ul>
+                                        </div>
+                                    </div>
+
+                                    <div class="pt-3 border-t border-zinc-800/80 flex items-center justify-between gap-2">
+                                        <span class="text-[11px] text-zinc-500 flex items-center gap-1">
+                                            <span>Avatar:</span>
+                                            <strong class="text-zinc-400">{scenario.vrmModel === 'man.vrm' ? 'Male Model' : 'Female Model'}</strong>
+                                        </span>
+
+                                        <button
+                                            type="button"
+                                            onclick={() => {
+                                                startRoleplay(scenario);
+                                                roleplayState.isSelectorOpen = false;
+                                            }}
+                                            class="px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 {isActive ? 'bg-zinc-800 text-yellow-300 hover:bg-zinc-700' : 'bg-yellow-200 hover:bg-yellow-300 text-zinc-900 shadow-md hover:scale-[1.02] active:scale-[0.98]'}"
+                                        >
+                                            <span>{isActive ? 'Restart Scene' : 'Start Roleplay'}</span>
+                                            <span>→</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            {/each}
+                        </div>
+                    {/if}
+                </div>
+
+                <!-- Modal Footer / Free Conversation Option -->
+                <div class="p-4 border-t border-zinc-800 bg-zinc-950/60 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs shrink-0">
+                    <div class="flex items-center gap-2 text-zinc-400">
+                        <span>💬</span>
+                        <span>Prefer freeform practice without situational constraints?</span>
+                    </div>
+
+                    <button
+                        type="button"
+                        onclick={() => {
+                            clearScenario();
+                            roleplayState.isSelectorOpen = false;
+                        }}
+                        class="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-yellow-200 border border-zinc-700 transition-colors font-medium whitespace-nowrap"
+                    >
+                        Free Conversation Mode
+                    </button>
+                </div>
+            </div>
+        </div>
+    {/if}
+
     {#if isLoading}
         <div class="absolute inset-0 z-50 flex flex-col items-center justify-center bg-zinc-950/80 backdrop-blur-sm rounded-3xl m-6">
             <div class="w-16 h-16 border-4 border-yellow-200 border-t-transparent rounded-full animate-spin"></div>
@@ -1231,14 +1598,33 @@
         
         <div class="p-4 md:p-6 border-b border-zinc-800 bg-zinc-900/50 backdrop-blur-md flex justify-between items-center shrink-0">
             <div>
-                <h2 class="text-lg md:text-xl font-bold text-yellow-200 leading-none">Practice</h2>
-                <p class="text-xs text-zinc-400 mt-1 hidden sm:block">Roleplay and get subtle corrections.</p>
+                <div class="flex items-center gap-2">
+                    <h2 class="text-lg md:text-xl font-bold text-yellow-200 leading-none">Practice</h2>
+                    {#if roleplayState.activeScenario}
+                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border {roleplayState.activeScenario.badgeColor}">
+                            <span>{roleplayState.activeScenario.icon}</span>
+                            <span class="max-w-[120px] truncate">{roleplayState.activeScenario.title}</span>
+                        </span>
+                    {/if}
+                </div>
+                <p class="text-xs text-zinc-400 mt-1 hidden sm:block">
+                    {roleplayState.activeScenario ? `Persona: ${roleplayState.activeScenario.personaName}` : 'Roleplay and get subtle corrections.'}
+                </p>
             </div>
             
             <div class="flex gap-2 items-center relative group">
                 {#if viewMode === 'chat'}
                     {@render viewModeControls()}
                 {/if}
+                <button 
+                    type="button"
+                    class="p-2 rounded-xl transition-all font-bold text-xs uppercase flex items-center gap-1.5 border shadow-sm {roleplayState.activeScenario ? 'bg-yellow-200/15 text-yellow-300 border-yellow-200/40 hover:bg-yellow-200/25' : 'bg-zinc-800 text-zinc-300 border-zinc-700 hover:bg-zinc-700 hover:text-yellow-200'}"
+                    onclick={() => roleplayState.isSelectorOpen = true}
+                    title="Choose Roleplay Persona & Scenario"
+                >
+                    <span class="text-sm">🎭</span>
+                    <span class="hidden sm:inline">{roleplayState.activeScenario ? 'Scenario' : 'Roleplay'}</span>
+                </button>
                 <button 
                     class="p-2 rounded-xl transition-colors font-bold text-xs uppercase flex items-center gap-1 bg-zinc-800 text-zinc-500 hover:bg-red-500/20 hover:text-red-400"
                     onclick={clearChat}
@@ -1302,6 +1688,77 @@
             </div>
         </div>
 
+        {#if roleplayState.activeScenario}
+            <div class="border-b border-zinc-800/80 bg-zinc-950/70 p-3 sm:p-4 shrink-0 transition-all">
+                <div class="flex items-center justify-between gap-2">
+                    <div class="flex items-center gap-2.5 min-w-0">
+                        <span class="text-2xl shrink-0 p-1.5 rounded-xl bg-zinc-900 border border-zinc-800 shadow-sm">{roleplayState.activeScenario.icon}</span>
+                        <div class="flex flex-col min-w-0">
+                            <div class="flex items-center gap-2">
+                                <h3 class="text-sm font-bold text-zinc-100 truncate">{roleplayState.activeScenario.title}</h3>
+                                <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold border {roleplayState.activeScenario.badgeColor}">
+                                    {roleplayState.activeScenario.difficulty}
+                                </span>
+                            </div>
+                            <span class="text-xs text-zinc-400 truncate">
+                                Partner: <strong class="text-yellow-200">{roleplayState.activeScenario.personaName}</strong> <span class="text-zinc-500">({roleplayState.activeScenario.role})</span>
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center gap-2 shrink-0">
+                        <button
+                            type="button"
+                            onclick={() => roleplayState.isMissionExpanded = !roleplayState.isMissionExpanded}
+                            class="text-xs px-2.5 py-1.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-700/80 flex items-center gap-1.5 transition-colors shadow-sm"
+                            title="Toggle Objectives Checklist"
+                        >
+                            <span class="font-bold text-yellow-300">{completedCount}/{totalObjectives}</span>
+                            <span class="hidden sm:inline text-zinc-400">Goals</span>
+                            <span class="text-[9px] transform transition-transform {roleplayState.isMissionExpanded ? 'rotate-180' : ''}">▼</span>
+                        </button>
+                        <button
+                            type="button"
+                            onclick={() => roleplayState.isSelectorOpen = true}
+                            class="p-1.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-yellow-200 border border-zinc-800 text-xs transition-colors"
+                            title="Switch Scenario"
+                        >
+                            🔄
+                        </button>
+                        <button
+                            type="button"
+                            onclick={() => clearScenario()}
+                            class="p-1.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-500 hover:text-red-400 border border-zinc-800 text-xs transition-colors"
+                            title="Exit Roleplay"
+                        >
+                            ✕
+                        </button>
+                    </div>
+                </div>
+
+                {#if roleplayState.isMissionExpanded}
+                    <div class="mt-3 pt-3 border-t border-zinc-800/80 flex flex-col gap-2.5">
+                        <p class="text-xs text-zinc-400 leading-relaxed italic bg-zinc-900/50 p-2 rounded-xl border border-zinc-800/50">
+                            📍 {roleplayState.activeScenario.setting}
+                        </p>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                            {#each roleplayState.activeScenario.objectives as obj}
+                                {@const isDone = !!roleplayState.completedObjectives[obj.id]}
+                                <button
+                                    type="button"
+                                    onclick={() => toggleObjective(obj.id)}
+                                    class="text-left px-2.5 py-2 rounded-xl border text-xs flex items-start gap-2 transition-all {isDone ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300 line-through opacity-85' : 'bg-zinc-900/90 border-zinc-800 text-zinc-300 hover:border-zinc-700'}"
+                                >
+                                    <span class="mt-0.5 text-xs shrink-0">{isDone ? '✅' : '⚪'}</span>
+                                    <span class="leading-snug">{obj.description}</span>
+                                </button>
+                            {/each}
+                        </div>
+                    </div>
+                {/if}
+            </div>
+        {/if}
+
         <div class="flex-1 overflow-y-auto p-4 md:p-6 space-y-6 flex flex-col min-h-0 {showHandwritingPanel ? 'max-h-[20vh] md:max-h-none' : 'min-h-[60px] md:min-h-0'}" bind:this={chatScrollContainer}>
             {#if chatHistory.length === 0}
                 <div class="flex-1 flex items-center justify-center text-center">
@@ -1364,6 +1821,25 @@
                     <span class="text-xs font-medium text-zinc-400 uppercase tracking-wider">
                         {vadState === 'speaking' ? 'Listening...' : 'Processing...'}
                     </span>
+                </div>
+            {/if}
+
+            {#if roleplayState.activeScenario && starterPhrases.length > 0}
+                <div class="mb-2 pb-1 flex items-center gap-1.5 overflow-x-auto scrollbar-none">
+                    <span class="text-[10px] font-bold text-yellow-300/80 uppercase tracking-wider shrink-0 flex items-center gap-1 bg-yellow-400/10 px-2 py-1 rounded-md border border-yellow-400/20">
+                        <span>💡</span>
+                        <span>Prompt:</span>
+                    </span>
+                    {#each starterPhrases as phrase}
+                        <button
+                            type="button"
+                            onclick={() => useStarterPhrase(phrase.target)}
+                            class="shrink-0 px-2.5 py-1 rounded-lg bg-zinc-800/90 hover:bg-zinc-700 hover:text-yellow-200 border border-zinc-700 text-xs text-zinc-300 transition-colors truncate max-w-[240px]"
+                            title={phrase.native}
+                        >
+                            "{phrase.target}"
+                        </button>
+                    {/each}
                 </div>
             {/if}
 

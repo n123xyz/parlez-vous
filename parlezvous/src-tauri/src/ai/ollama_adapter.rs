@@ -167,6 +167,7 @@ impl LlmProvider for OllamaAdapter {
         active_subtheme: Option<String>,
         _audio_base64: Option<String>,
         _image_uri: Option<String>,
+        roleplay_scenario: Option<String>,
     ) -> Result<ChatResponse, String> {
         let is_vision = _image_uri.is_some();
         let system_prompt_str = super::build_chat_system_prompt(
@@ -175,6 +176,7 @@ impl LlmProvider for OllamaAdapter {
             &context,
             &active_theme,
             &active_subtheme,
+            &roleplay_scenario,
             !is_vision,
             false,
             is_vision,

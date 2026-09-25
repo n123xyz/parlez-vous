@@ -241,6 +241,7 @@ impl LlmProvider for LiteRtAdapter {
         active_subtheme: Option<String>,
         audio_base64: Option<String>,
         image_uri: Option<String>,
+        roleplay_scenario: Option<String>,
     ) -> Result<ChatResponse, String> {
         self.ensure_initialized().await?;
         let system_prompt_str = super::build_chat_system_prompt(
@@ -249,6 +250,7 @@ impl LlmProvider for LiteRtAdapter {
             &context,
             &active_theme,
             &active_subtheme,
+            &roleplay_scenario,
             false,
             true, // use_expression_tags
             image_uri.is_some(),

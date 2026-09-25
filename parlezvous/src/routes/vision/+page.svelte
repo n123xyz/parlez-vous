@@ -92,8 +92,10 @@
                 activeTextbook: null,
                 activePage: null,
                 activeTheme: null,
+                activeSubtheme: null,
                 audioBase64: null,
-                imageUri: selectedImageUri
+                imageUri: selectedImageUri,
+                roleplayScenario: null
             });
 
             feedback = {

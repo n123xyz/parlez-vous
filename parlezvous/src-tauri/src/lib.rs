@@ -403,6 +403,7 @@ async fn chat_with_avatar(
     active_subtheme: Option<String>,
     audio_base64: Option<String>,
     image_uri: Option<String>,
+    roleplay_scenario: Option<String>,
 ) -> Result<ChatResponse, String> {
     println!(
         "[IPC] chat_with_avatar called for model {} in {}",
@@ -453,6 +454,7 @@ async fn chat_with_avatar(
             active_subtheme,
             audio_base64,
             image_uri,
+            roleplay_scenario,
         )
         .await
 }

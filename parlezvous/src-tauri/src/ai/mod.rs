@@ -113,6 +113,7 @@ pub trait LlmProvider {
         active_subtheme: Option<String>,
         audio_base64: Option<String>,
         image_uri: Option<String>,
+        roleplay_scenario: Option<String>,
     ) -> Result<ChatResponse, String>;
     async fn generate_conjugation_exercise(
         &self,
@@ -279,6 +280,7 @@ pub fn build_chat_system_prompt(
     context: &str,
     active_theme: &Option<String>,
     active_subtheme: &Option<String>,
+    roleplay_scenario: &Option<String>,
     use_json: bool,
     use_expression_tags: bool,
     is_vision_judge: bool,
@@ -294,6 +296,29 @@ pub fn build_chat_system_prompt(
             Point out anything they missed, and correct their grammar based on their {skill_level} level.\n\n",
             language=language, skill_level=skill_level
         ));
+    } else if let Some(scenario) = roleplay_scenario {
+        prompt.push_str(&format!(
+            "# ROLEPLAY SCENARIO & PERSONA\n\
+            You are engaged in an interactive language learning roleplay simulation for a student learning {language}.\n\
+            {scenario}\n\n\
+            CRITICAL ROLEPLAY RULES:\n\
+            - Stay strictly in character as your persona at all times.\n\
+            - Converse naturally in {language}, keeping vocabulary and complexity suited to the user's {skill_level} level.\n\
+            - React directly and realistically to the user's inputs, orders, negotiations, and questions.\n\
+            - Keep each response concise (1-3 sentences) to encourage frequent back-and-forth dialogue.\n\
+            - Do not break character or speak like a generic AI assistant.\n\
+            - You control an avatar. Include exact animation tags: [anim:shrug], [anim:greet], [anim:peace], [anim:shoot], [anim:spin], [anim:pose], [anim:squat], [anim:full]. No other tags.\n",
+            language=language, skill_level=skill_level, scenario=scenario
+        ));
+
+        if use_expression_tags {
+            prompt.push_str(
+                "- Expression tags (use exactly as shown):\n\
+                  * <laugh> : END of sentence (x3)\n\
+                  * <breath> : START of sentence (x3)\n\
+                  * <sad> : BOTH ends of sentence (x3)\n"
+            );
+        }
     } else {
         prompt.push_str(&format!(
             "Role: {} language partner. Keep conversation flowing naturally. Adapt to user's level. Ignore minor errors. End with a short follow-up question.\n\n\
@@ -324,15 +349,22 @@ pub fn build_chat_system_prompt(
             if let Some(subtheme) = active_subtheme {
                 prompt.push_str(&format!("Specific Context/Subtheme: {}.\n", subtheme));
             }
-            prompt.push_str("\n");
+            prompt.push('\n');
         }
     }
 
     if skill_level.trim().eq_ignore_ascii_case("beginner") {
-        prompt.push_str(&format!(
-            "User level: Beginner. Act as strict tutor. Speak mostly English. Introduce 1-2 new {} words/phrases per turn with meaning. Use native script for {} words.\n",
-            language, language
-        ));
+        if roleplay_scenario.is_some() {
+            prompt.push_str(&format!(
+                "User level: Beginner. Speak clearly in {language} with accessible, beginner-friendly vocabulary. Keep your persona welcoming, patient, and easy to understand.\n",
+                language=language
+            ));
+        } else {
+            prompt.push_str(&format!(
+                "User level: Beginner. Act as strict tutor. Speak mostly English. Introduce 1-2 new {} words/phrases per turn with meaning. Use native script for {} words.\n",
+                language, language
+            ));
+        }
     } else {
         prompt.push_str(&format!(
             "User level: {}. Speak almost entirely in {}. Adapt vocabulary to their level.\n",
